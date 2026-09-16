@@ -1,0 +1,9 @@
+[package]
+name = "luce_pkg"
+source = "src"
+
+[exports]
+pkg = "luce_pkg.pkg"
+
+[dependencies]
+luce_crypto = "../luce-crypto"

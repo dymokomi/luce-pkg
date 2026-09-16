@@ -1,0 +1,49 @@
+import pkg
+
+pub func main(arguments: str[]) -> i32!:
+    discard(arguments)
+    let v = try pkg.parse_version("1.2.3")
+    assert(v.major == 1 and v.minor == 2 and v.patch == 3)
+    var failed = false
+    discard(pkg.parse_version("01.2.3") catch failure:
+        assert(failure.code == pkg.invalid)
+        failed = true
+        recover pkg.Version(0, 0, 0))
+    assert(failed)
+    failed = false
+    discard(pkg.parse_version("1.2.3-beta") catch failure:
+        assert(failure.code == pkg.invalid)
+        failed = true
+        recover pkg.Version(0, 0, 0))
+    assert(failed)
+    var catalog: pkg.Candidate[4]
+    catalog[0] = pkg.Candidate(name = "acme/demo", version = "1.1.0")
+    catalog[1] = pkg.Candidate(name = "acme/demo", version = "1.2.5")
+    catalog[2] = pkg.Candidate(name = "acme/demo", version = "2.0.0")
+    catalog[3] = pkg.Candidate(name = "other/x", version = "1.9.0")
+    let chosen = try pkg.select_caret("acme/demo", "1.2.0", catalog, 4)
+    assert(chosen.major == 1 and chosen.minor == 2 and chosen.patch == 5)
+    failed = false
+    discard(pkg.select_caret("acme/demo", "3.0.0", catalog, 4) catch failure:
+        assert(failure.code == pkg.invalid)
+        failed = true
+        recover pkg.Version(0, 0, 0))
+    assert(failed)
+    var zero_catalog: pkg.Candidate[3]
+    zero_catalog[0] = pkg.Candidate(name = "acme/zero", version = "0.1.0")
+    zero_catalog[1] = pkg.Candidate(name = "acme/zero", version = "0.1.9")
+    zero_catalog[2] = pkg.Candidate(name = "acme/zero", version = "0.2.0")
+    let zero = try pkg.select_caret("acme/zero", "0.1.0", zero_catalog, 3)
+    assert(zero.major == 0 and zero.minor == 1 and zero.patch == 9)
+    let origin = try pkg.lock_origin("schema_version = 1\norigin = \"https://pkg.luciaos.com\"\n")
+    assert(origin == "https://pkg.luciaos.com")
+    var packages: pkg.Package[1]
+    packages[0] = pkg.Package(name = "acme/demo", version = pkg.Version(1, 2, 3), digest = "ab", compiler = "luce-base")
+    var encoded: u8[512]
+    let n = try pkg.encode_lock("https://pkg.luciaos.com", packages, 1, encoded)
+    assert(try pkg.lock_origin((str)encoded[..<n]) == "https://pkg.luciaos.com")
+    var digest: u8[32]
+    assert(try pkg.source_digest(b"abc", digest) == 32)
+    assert(digest[0] == 0xba and digest[1] == 0x78 and digest[2] == 0x16 and digest[31] == 0xad)
+    print("PASS semver caret resolve and luce.lock origin parse")
+    return 0

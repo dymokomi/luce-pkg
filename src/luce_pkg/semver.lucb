@@ -1,0 +1,52 @@
+## Numeric major.minor.patch only. Prerelease tags are rejected in v1.
+pub let invalid: ErrorCode = ErrorCode.package(1)
+
+pub struct Version:
+    pub var major: u64
+    pub var minor: u64
+    pub var patch: u64
+
+func digit(c: u8) -> bool:
+    return c >= '0' and c <= '9'
+
+func parse_part(text: str, at: usize, out_at: usize*) -> u64!:
+    if at >= text.length or not digit(text.bytes[at]): error(invalid, "expected a numeric version part")
+    if text.bytes[at] == '0' and at + 1 < text.length and digit(text.bytes[at + 1]):
+        error(invalid, "leading zeros are not allowed")
+    var value: u64
+    var i = at
+    while i < text.length and digit(text.bytes[i]):
+        let next = value * 10 + (u64)(text.bytes[i] - '0')
+        if next < value: error(invalid, "version part overflow")
+        value = next
+        i += 1
+    *out_at = i
+    return value
+
+pub func parse(text: str) -> Version!:
+    var at: usize
+    let major = try parse_part(text, 0, &at)
+    if at >= text.length or text.bytes[at] != '.': error(invalid, "expected major.minor.patch")
+    at += 1
+    let minor = try parse_part(text, at, &at)
+    if at >= text.length or text.bytes[at] != '.': error(invalid, "expected major.minor.patch")
+    at += 1
+    let patch = try parse_part(text, at, &at)
+    if at != text.length: error(invalid, "unexpected version suffix")
+    return Version(major, minor, patch)
+
+pub func compare(a: Version, b: Version) -> i32:
+    if a.major < b.major: return -1
+    if a.major > b.major: return 1
+    if a.minor < b.minor: return -1
+    if a.minor > b.minor: return 1
+    if a.patch < b.patch: return -1
+    if a.patch > b.patch: return 1
+    return 0
+
+## Caret: same major, greater or equal. 0.x is compared on minor.
+pub func matches_caret(req: Version, have: Version) -> bool:
+    if compare(have, req) < 0: return false
+    if req.major != 0: return have.major == req.major
+    if req.minor != 0: return have.major == 0 and have.minor == req.minor
+    return have.major == 0 and have.minor == 0 and have.patch == req.patch

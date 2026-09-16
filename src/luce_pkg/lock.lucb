@@ -1,0 +1,90 @@
+## Frozen v1 lockfile: luce.lock TOML, schema_version = 1. Compilers do not read it.
+import memory
+from luce_pkg.semver import Version, parse, invalid
+
+pub struct Package:
+    pub var name: str
+    pub var version: Version
+    pub var digest: str
+    pub var compiler: str
+
+pub struct Lock:
+    pub var origin: str
+    pub var packages: Package[]
+    pub var count: usize
+
+    pub mutating func close():
+        if self.packages.length > 0: free(self.packages) in memory.heap
+        var empty: Package[]
+        self.packages = empty
+        self.count = 0
+
+func write_text(text: u8[], used: usize*, s: str) -> !:
+    let n = *used
+    if n + s.length > text.length: error(invalid, "lockfile encoding overflow")
+    for i in 0..<s.length: text[n + i] = s.bytes[i]
+    *used = n + s.length
+
+func write_u64(text: u8[], used: usize*, value: u64) -> !:
+    if value == 0:
+        try write_text(text, used, "0")
+        return
+    var digits: u8[20]
+    var n: usize
+    var v = value
+    while v != 0:
+        digits[n] = '0' + (u8)(v % 10)
+        v = v // 10
+        n += 1
+    var buf: u8[20]
+    var i: usize
+    while n > 0:
+        n -= 1
+        buf[i] = digits[n]
+        i += 1
+    try write_text(text, used, (str)buf[..<i])
+
+pub func encode(origin: str, packages: const Package[], count: usize, out: u8[]) -> usize!:
+    if count > packages.length: error(invalid, "lock package count")
+    var text: u8[4096]
+    var n: usize
+    try write_text(text, &n, "schema_version = 1\norigin = \"")
+    try write_text(text, &n, origin)
+    try write_text(text, &n, "\"\n")
+    for i in 0..<count:
+        try write_text(text, &n, "\n[[package]]\nname = \"")
+        try write_text(text, &n, packages[i].name)
+        try write_text(text, &n, "\"\nversion = \"")
+        try write_u64(text, &n, packages[i].version.major)
+        try write_text(text, &n, ".")
+        try write_u64(text, &n, packages[i].version.minor)
+        try write_text(text, &n, ".")
+        try write_u64(text, &n, packages[i].version.patch)
+        try write_text(text, &n, "\"\ndigest = \"")
+        try write_text(text, &n, packages[i].digest)
+        try write_text(text, &n, "\"\ncompiler = \"")
+        try write_text(text, &n, packages[i].compiler)
+        try write_text(text, &n, "\"\n")
+    if out.length < n: error(invalid, "lockfile output is too small")
+    for i in 0..<n: out[i] = text[i]
+    return n
+
+pub func origin_of(text: str) -> str!:
+    ## Minimal parser for the frozen origin field.
+    let prefix = "origin = \""
+    var i: usize
+    while i + prefix.length <= text.length:
+        var same = true
+        for j in 0..<prefix.length:
+            if text.bytes[i + j] != prefix.bytes[j]:
+                same = false
+                break
+        if same:
+            var k = i + prefix.length
+            var end = k
+            while end < text.length and text.bytes[end] != '"':
+                end += 1
+            if end >= text.length: error(invalid, "unterminated origin")
+            return (str)text.bytes[k..<end]
+        i += 1
+    error(invalid, "lockfile origin is missing")

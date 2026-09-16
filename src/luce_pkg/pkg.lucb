@@ -1,0 +1,25 @@
+import luce_pkg.semver as semver
+import luce_pkg.lock as lock
+import luce_pkg.resolve as resolve
+import crypto_native
+
+pub let invalid = semver.invalid
+pub type Version = semver.Version
+pub type Package = lock.Package
+pub type Lock = lock.Lock
+pub type Candidate = resolve.Candidate
+
+pub func parse_version(text: str) -> Version!:
+    return try semver.parse(text)
+
+pub func select_caret(name: str, requirement: str, catalog: const Candidate[], count: usize) -> Version!:
+    return try resolve.select_caret(name, requirement, catalog, count)
+
+pub func lock_origin(text: str) -> str!:
+    return try lock.origin_of(text)
+
+pub func encode_lock(origin: str, packages: const Package[], count: usize, out: u8[]) -> usize!:
+    return try lock.encode(origin, packages, count, out)
+
+pub func source_digest(input: const u8[], output: u8[]) -> usize!:
+    return try crypto_native.digest(input, output, "sha256")

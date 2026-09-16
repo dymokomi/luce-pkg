@@ -1,0 +1,19 @@
+from luce_pkg.semver import Version, parse, compare, matches_caret, invalid
+
+pub struct Candidate:
+    pub var name: str
+    pub var version: str
+
+pub func select_caret(name: str, requirement: str, catalog: const Candidate[], count: usize) -> Version!:
+    let req = try parse(requirement)
+    var found = false
+    var best: Version
+    for i in 0..<count:
+        if catalog[i].name != name: continue
+        let have = try parse(catalog[i].version)
+        if not matches_caret(req, have): continue
+        if not found or compare(have, best) > 0:
+            best = have
+            found = true
+    if not found: error(invalid, "no candidate satisfies the caret requirement")
+    return best
