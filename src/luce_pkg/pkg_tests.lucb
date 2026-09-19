@@ -42,6 +42,29 @@ pub func main(arguments: str[]) -> i32!:
     var encoded: u8[512]
     let n = try pkg.encode_lock("https://pkg.luciaos.com", packages, 1, encoded)
     assert(try pkg.lock_origin((str)encoded[..<n]) == "https://pkg.luciaos.com")
+    var decoded = try pkg.decode_lock((str)encoded[..<n])
+    defer decoded.close()
+    assert(decoded.count == 1 and decoded.packages[0].name == "acme/demo")
+    assert(decoded.packages[0].version.patch == 3)
+    for i in 0..<n: encoded[i] = 0
+    assert(decoded.origin == "https://pkg.luciaos.com")
+    assert(decoded.packages[0].compiler == "luce-base")
+    let malformed: str[8] = [
+        "# origin = \"attacker\"\n",
+        "schema_version = 2\norigin = \"https://pkg.luciaos.com\"\n",
+        "schema_version = 1\norigin = \"a\"\norigin = \"b\"\n",
+        "schema_version = 1\norigin = \"a\"\n[[package]]\nname = \"x\"\n",
+        "schema_version = 1\norigin = \"a\"\nunknown = 1\n",
+        "schema_version = 1\norigin = \"a\" trailing\n",
+        "schema_version = 1\norigin = \"a\\b\"\n",
+        "schema_version = 1\norigin = \"a\"\n[other]\norigin = \"b\"\n"]
+    for text in malformed:
+        failed = false
+        discard(pkg.lock_origin(text) catch failure:
+            assert(failure.code == pkg.invalid)
+            failed = true
+            recover "")
+        assert(failed)
     failed = false
     discard(pkg.select_caret("acme/demo", "1.2.0", catalog, 5) catch failure:
         assert(failure.code == pkg.invalid)

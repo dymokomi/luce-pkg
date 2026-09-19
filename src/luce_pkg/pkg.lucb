@@ -18,6 +18,9 @@ pub func select_caret(name: str, requirement: str, catalog: const Candidate[], c
 pub func lock_origin(text: str) -> str!:
     return try lock.origin_of(text)
 
+pub func decode_lock(text: str) -> Lock!:
+    return try lock.decode(text)
+
 pub func encode_lock(origin: str, packages: const Package[], count: usize, out: u8[]) -> usize!:
     return try lock.encode(origin, packages, count, out)
 
