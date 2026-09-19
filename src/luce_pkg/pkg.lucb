@@ -33,8 +33,8 @@ pub func lock_origin(text: str) -> str!:
 pub func decode_lock(text: str) -> Lock!:
     return try lock.decode(text)
 
-pub func encode_lock(origin: str, packages: const Package[], count: usize, out: u8[]) -> usize!:
-    return try lock.encode(origin, packages, count, out)
+pub func encode_lock(origin: str, packages: const Package[], count: usize, out: u8[], schema_version: u8 = 1) -> usize!:
+    return try lock.encode(origin, packages, count, out, schema_version)
 
 pub func source_digest(input: const u8[], output: u8[]) -> usize!:
     return try crypto_native.digest(input, output, "sha256")

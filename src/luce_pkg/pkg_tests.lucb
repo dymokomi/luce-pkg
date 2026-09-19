@@ -49,9 +49,40 @@ pub func main(arguments: str[]) -> i32!:
     for i in 0..<n: encoded[i] = 0
     assert(decoded.origin == "https://pkg.luciaos.com")
     assert(decoded.packages[0].compiler == "luce-base")
+    assert(decoded.schema_version == 1 and decoded.packages[0].commit.length == 0)
+    packages[0].commit = "0123456789012345678901234567890123456789"
+    packages[0].toolchain = "0.20.0"
+    let v2_size = try pkg.encode_lock("https://pkg.luciaos.com", packages, 1, encoded, 2)
+    var v2 = try pkg.decode_lock((str)encoded[..<v2_size])
+    defer v2.close()
+    assert(v2.schema_version == 2 and v2.packages[0].commit == packages[0].commit)
+    assert(v2.packages[0].toolchain == "0.20.0")
+    failed = false
+    discard(pkg.encode_lock("https://pkg.luciaos.com", packages, 1, encoded) catch:
+        failed = true
+        recover 0)
+    assert(failed)
+    for bad in ["", "1", "ABCDEF0123456789012345678901234567890123", "012345678901234567890123456789012345678g"]:
+        packages[0].commit = bad
+        failed = false
+        discard(pkg.encode_lock("https://pkg.luciaos.com", packages, 1, encoded, 2) catch:
+            failed = true
+            recover 0)
+        assert(failed)
+    packages[0].commit = ""
+    packages[0].toolchain = ""
+    for bad in [
+        "schema_version = 2\norigin = \"a\"\n[[package]]\nname = \"x\"\nversion = \"1.0.0\"\ndigest = \"ab\"\ncompiler = \"luce\"\n",
+        "schema_version = 1\norigin = \"a\"\n[[package]]\ncommit = \"0123456789012345678901234567890123456789\"\n"]:
+        failed = false
+        var rejected = pkg.decode_lock(bad) catch:
+            failed = true
+            recover pkg.Lock()
+        rejected.close()
+        assert(failed)
     let malformed: str[8] = [
         "# origin = \"attacker\"\n",
-        "schema_version = 2\norigin = \"https://pkg.luciaos.com\"\n",
+        "schema_version = 3\norigin = \"https://pkg.luciaos.com\"\n",
         "schema_version = 1\norigin = \"a\"\norigin = \"b\"\n",
         "schema_version = 1\norigin = \"a\"\n[[package]]\nname = \"x\"\n",
         "schema_version = 1\norigin = \"a\"\nunknown = 1\n",

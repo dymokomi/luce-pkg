@@ -1,4 +1,4 @@
-## Frozen v1 lockfile: luc.lock TOML, schema_version = 1. Compilers do not read it.
+## Restricted luc.lock TOML v1/v2. Compilers do not read it.
 import memory
 from luce_pkg.semver import Version, parse, invalid
 
@@ -7,6 +7,8 @@ pub struct Package:
     pub var version: Version
     pub var digest: str
     pub var compiler: str
+    pub var commit: str
+    pub var toolchain: str
 
 pub struct Lock:
     ## Owned input backing all strings returned by decode().
@@ -14,6 +16,7 @@ pub struct Lock:
     pub var origin: str
     pub var packages: Package[]
     pub var count: usize
+    pub var schema_version: u8
 
     pub mutating func close():
         if self.packages.length > 0: free(self.packages) in memory.heap
@@ -24,6 +27,7 @@ pub struct Lock:
         var bytes: u8[]
         self.storage = bytes
         self.origin = ""
+        self.schema_version = 0
 
 func write_text(text: u8[], used: usize*, s: str) -> !:
     let n = *used
@@ -57,16 +61,27 @@ func require_literal(value: str) -> !:
         if byte < 32 or byte == 127 or byte == '"' or byte == '\\':
             error(invalid, "lock field contains unsupported TOML string syntax")
 
-pub func encode(origin: str, packages: const Package[], count: usize, out: u8[]) -> usize!:
+func pins(package: Package) -> !:
+    if package.commit.length != 40: error(invalid, "lock commit must have 40 hex digits")
+    for byte in package.commit.bytes:
+        if not ((byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'f')):
+            error(invalid, "lock commit must be lowercase hexadecimal")
+    discard(try parse(package.toolchain))
+
+pub func encode(origin: str, packages: const Package[], count: usize, out: u8[], schema_version: u8 = 1) -> usize!:
+    if schema_version != 1 and schema_version != 2: error(invalid, "unsupported lock schema")
     if count > packages.length: error(invalid, "lock package count")
     try require_literal(origin)
     for i in 0..<count:
         try require_literal(packages[i].name)
         try require_literal(packages[i].digest)
         try require_literal(packages[i].compiler)
+        if schema_version == 2: try pins(packages[i])
+        elif packages[i].commit.length != 0 or packages[i].toolchain.length != 0:
+            error(invalid, "v1 cannot represent commit/toolchain pins")
     var text: u8[4096]
     var n: usize
-    try write_text(text, &n, "schema_version = 1\norigin = \"")
+    try write_text(text, &n, "schema_version = 2\norigin = \"" if schema_version == 2 else "schema_version = 1\norigin = \"")
     try write_text(text, &n, origin)
     try write_text(text, &n, "\"\n")
     for i in 0..<count:
@@ -83,6 +98,12 @@ pub func encode(origin: str, packages: const Package[], count: usize, out: u8[])
         try write_text(text, &n, "\"\ncompiler = \"")
         try write_text(text, &n, packages[i].compiler)
         try write_text(text, &n, "\"\n")
+        if schema_version == 2:
+            try write_text(text, &n, "commit = \"")
+            try write_text(text, &n, packages[i].commit)
+            try write_text(text, &n, "\"\ntoolchain = \"")
+            try write_text(text, &n, packages[i].toolchain)
+            try write_text(text, &n, "\"\n")
     if out.length < n: error(invalid, "lockfile output is too small")
     for i in 0..<n: out[i] = text[i]
     return n
@@ -133,7 +154,9 @@ func decode_view(text: str) -> Lock!:
         if line.bytes[0] == '#': continue
         if line == "[[package]]":
             if not schema or not origin: error(invalid, "lock header must precede packages")
-            if result.count > 0 and fields != 15: error(invalid, "incomplete locked package")
+            if result.count > 0 and fields != (63 if result.schema_version == 2 else 15): error(invalid, "incomplete locked package")
+            if result.count > 0 and result.schema_version == 2: try pins(result.packages[result.count - 1])
+            result.packages[result.count] = Package()
             result.count += 1
             fields = 0
             continue
@@ -147,8 +170,9 @@ func decode_view(text: str) -> Lock!:
         let value = trim((str)line.bytes[equal + 1..])
         if result.count == 0:
             if key == "schema_version":
-                if schema or value != "1": error(invalid, "invalid or duplicate lock schema")
+                if schema or (value != "1" and value != "2"): error(invalid, "invalid or duplicate lock schema")
                 schema = true
+                result.schema_version = 2 if value == "2" else 1
             elif key == "origin":
                 if origin: error(invalid, "duplicate lock origin")
                 result.origin = try literal(value)
@@ -161,6 +185,8 @@ func decode_view(text: str) -> Lock!:
             elif key == "version": bit = 2
             elif key == "digest": bit = 4
             elif key == "compiler": bit = 8
+            elif key == "commit" and result.schema_version == 2: bit = 16
+            elif key == "toolchain" and result.schema_version == 2: bit = 32
             else: error(invalid, "unknown package field")
             if (fields & bit) != 0: error(invalid, "duplicate package field")
             fields |= bit
@@ -172,9 +198,12 @@ func decode_view(text: str) -> Lock!:
                 result.packages[index].name = contents
             elif bit == 2: result.packages[index].version = try parse(contents)
             elif bit == 4: result.packages[index].digest = contents
-            else: result.packages[index].compiler = contents
+            elif bit == 8: result.packages[index].compiler = contents
+            elif bit == 16: result.packages[index].commit = contents
+            else: result.packages[index].toolchain = contents
     if not schema or not origin: error(invalid, "missing lock header")
-    if result.count > 0 and fields != 15: error(invalid, "incomplete locked package")
+    if result.count > 0 and fields != (63 if result.schema_version == 2 else 15): error(invalid, "incomplete locked package")
+    if result.count > 0 and result.schema_version == 2: try pins(result.packages[result.count - 1])
     return result
 
 pub func decode(text: str) -> Lock!:
