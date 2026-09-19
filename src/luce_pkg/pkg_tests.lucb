@@ -42,8 +42,28 @@ pub func main(arguments: str[]) -> i32!:
     var encoded: u8[512]
     let n = try pkg.encode_lock("https://pkg.luciaos.com", packages, 1, encoded)
     assert(try pkg.lock_origin((str)encoded[..<n]) == "https://pkg.luciaos.com")
+    failed = false
+    discard(pkg.select_caret("acme/demo", "1.2.0", catalog, 5) catch failure:
+        assert(failure.code == pkg.invalid)
+        failed = true
+        recover pkg.Version(0, 0, 0))
+    assert(failed)
+    let malicious: str[4] = ["bad\"value", "bad\\value", "bad\nvalue", "bad\tvalue"]
+    for value in malicious:
+        for field in 0..<4:
+            packages[0].name = value if field == 1 else "acme/demo"
+            packages[0].digest = value if field == 2 else "ab"
+            packages[0].compiler = value if field == 3 else "luce-base"
+            for i in 0..<encoded.length: encoded[i] = 173
+            failed = false
+            discard(pkg.encode_lock(value if field == 0 else "https://pkg.luciaos.com", packages, 1, encoded) catch failure:
+                assert(failure.code == pkg.invalid)
+                failed = true
+                recover 0)
+            assert(failed)
+            for byte in encoded: assert(byte == 173)
     var digest: u8[32]
     assert(try pkg.source_digest(b"abc", digest) == 32)
     assert(digest[0] == 0xba and digest[1] == 0x78 and digest[2] == 0x16 and digest[31] == 0xad)
-    print("PASS semver caret resolve and luce.lock origin parse")
+    print("PASS semver caret resolve and luc.lock origin parse")
     return 0

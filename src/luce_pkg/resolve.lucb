@@ -5,6 +5,8 @@ pub struct Candidate:
     pub var version: str
 
 pub func select_caret(name: str, requirement: str, catalog: const Candidate[], count: usize) -> Version!:
+    if count > catalog.length:
+        error(invalid, "catalog count exceeds available candidates")
     let req = try parse(requirement)
     var found = false
     var best: Version

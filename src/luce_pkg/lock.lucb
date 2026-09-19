@@ -1,4 +1,4 @@
-## Frozen v1 lockfile: luce.lock TOML, schema_version = 1. Compilers do not read it.
+## Frozen v1 lockfile: luc.lock TOML, schema_version = 1. Compilers do not read it.
 import memory
 from luce_pkg.semver import Version, parse, invalid
 
@@ -21,7 +21,7 @@ pub struct Lock:
 
 func write_text(text: u8[], used: usize*, s: str) -> !:
     let n = *used
-    if n + s.length > text.length: error(invalid, "lockfile encoding overflow")
+    if n > text.length or s.length > text.length - n: error(invalid, "lockfile encoding overflow")
     for i in 0..<s.length: text[n + i] = s.bytes[i]
     *used = n + s.length
 
@@ -44,8 +44,20 @@ func write_u64(text: u8[], used: usize*, value: u64) -> !:
         i += 1
     try write_text(text, used, (str)buf[..<i])
 
+## V1 stores unescaped identifiers/URLs. Reject syntax instead of allowing callers
+## to inject new TOML keys/tables. Escaped strings require an owning parser first.
+func require_literal(value: str) -> !:
+    for byte in value.bytes:
+        if byte < 32 or byte == 127 or byte == '"' or byte == '\\':
+            error(invalid, "lock field contains unsupported TOML string syntax")
+
 pub func encode(origin: str, packages: const Package[], count: usize, out: u8[]) -> usize!:
     if count > packages.length: error(invalid, "lock package count")
+    try require_literal(origin)
+    for i in 0..<count:
+        try require_literal(packages[i].name)
+        try require_literal(packages[i].digest)
+        try require_literal(packages[i].compiler)
     var text: u8[4096]
     var n: usize
     try write_text(text, &n, "schema_version = 1\norigin = \"")

@@ -19,6 +19,8 @@ def main():
     if not args.base.is_file():
         raise SystemExit("Run python3 tools/bootstrap.py first")
     environment = dict(os.environ, LUCE_BASE=str(args.base.resolve()))
+    environment.setdefault("LUCE_STD", str(ROOT.parent / "luce-base/src/std"))
+    environment.setdefault("LUCE_CACHE", str(ROOT / "build/cache"))
     def run(command):
         subprocess.run([str(a) for a in command], cwd=ROOT, env=environment, check=True, timeout=120)
     for mode, flags in MODES.items():
