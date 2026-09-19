@@ -26,6 +26,52 @@ pub func main(arguments: str[]) -> i32!:
     release.version = "1.2.4"
     assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
     release.version = "1.2.3"
+    release.package = "acme/other"
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    release.package = "acme/demo"
+    release.commit = "1123456789012345678901234567890123456789"
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    release.commit = "0123456789012345678901234567890123456789"
+    release.compiler = "luce"
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    release.compiler = "luce-base"
+    release.toolchain = "0.21.0"
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    release.toolchain = "0.20.0"
+    digest[0] ^= 1
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    digest[0] ^= 1
+    pk[0] ^= 1
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    pk[0] ^= 1
+    assert(not try pkg.verify_release(release, pk, signature[..<3308], b"source fixture"))
+    # All fields restored: rejection above must not have damaged verifier state.
+    assert(try pkg.verify_release(release, pk, signature, b"source fixture"))
+    for kind in 0..<6:
+        var bad = release
+        if kind == 0: bad.commit = "012345678901234567890123456789012345678Z"
+        elif kind == 1: bad.version = "01.2.3"
+        elif kind == 2: bad.compiler = "unknown"
+        elif kind == 3: bad.origin = "https://bad\norigin"
+        elif kind == 4: bad.source_digest = digest[..<31]
+        else: bad.package = ""
+        for i in 0..<wire.length: wire[i] = 173
+        var rejected = false
+        discard(pkg.encode_release(bad, wire) catch failure:
+            assert(failure.code == pkg.invalid)
+            rejected = true
+            recover 0)
+        assert(rejected)
+        for byte in wire: assert(byte == 173)
+    var small: u8[8]
+    for i in 0..<small.length: small[i] = 173
+    var short_output = false
+    discard(pkg.encode_release(release, small) catch failure:
+        assert(failure.code == pkg.invalid)
+        short_output = true
+        recover 0)
+    assert(short_output)
+    for byte in small: assert(byte == 173)
     signature[0] ^= 1
     assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
     assert(not try pkg.verify_release(release, pk[..<1951], signature, b"source fixture"))
