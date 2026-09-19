@@ -1,0 +1,69 @@
+## LRS1 release metadata. The caller supplies an independently trusted publisher key.
+import crypto_native
+from luce_pkg.semver import parse, invalid
+
+pub struct Release:
+    pub var origin: str
+    pub var package: str
+    pub var version: str
+    pub var commit: str
+    pub var source_digest: const u8[]
+    pub var compiler: str
+    pub var toolchain: str
+
+func checked_text(value: str) -> !:
+    if value.length == 0 or value.length > 256:
+        error(invalid, "release text length outside bounds")
+    for byte in value.bytes:
+        if byte < 33 or byte > 126:
+            error(invalid, "release text must be printable ASCII without whitespace")
+
+func field(out: u8[], offset: usize*, value: str):
+    let n = value.length
+    out[*offset] = (u8)(n & 255)
+    out[*offset + 1] = (u8)(n >> 8)
+    *offset += 2
+    for byte in value.bytes:
+        out[*offset] = byte
+        *offset += 1
+
+## Magic LRS1, u16le schema=1, six length-prefixed text fields, raw SHA-256.
+## All validation precedes writing, so rejected input does not change output.
+pub func encode(release: Release, out: u8[]) -> usize!:
+    let fields = [release.origin, release.package, release.version, release.commit, release.compiler, release.toolchain]
+    var required: usize = 6 + 32
+    for value in fields:
+        try checked_text(value)
+        required += 2 + value.length
+    discard(try parse(release.version))
+    if release.commit.length != 40: error(invalid, "release commit must be a SHA-1 Git object ID")
+    for byte in release.commit.bytes:
+        if not ((byte >= '0' and byte <= '9') or (byte >= 'a' and byte <= 'f')):
+            error(invalid, "release commit must be lowercase hexadecimal")
+    if release.compiler != "luce" and release.compiler != "luce-base":
+        error(invalid, "unknown release compiler")
+    if release.source_digest.length != 32: error(invalid, "release requires SHA-256 source digest")
+    if out.length < required: error(invalid, "release output too small")
+    out[0] = 'L'
+    out[1] = 'R'
+    out[2] = 'S'
+    out[3] = '1'
+    out[4] = 1
+    out[5] = 0
+    var offset: usize = 6
+    for value in fields: field(out, &offset, value)
+    for byte in release.source_digest:
+        out[offset] = byte
+        offset += 1
+    return offset
+
+pub func verify(release: Release, trusted_key: const u8[], signature: const u8[], source: const u8[]) -> bool!:
+    if trusted_key.length != 1952 or signature.length != 3309:
+        return false
+    var metadata: u8[1600]
+    let size = try encode(release, metadata)
+    if not try crypto_native.mldsa_verify(trusted_key, metadata[..<size], signature):
+        return false
+    var actual: u8[32]
+    discard(try crypto_native.digest(source, actual, "sha256"))
+    return crypto_native.equal(actual, release.source_digest)

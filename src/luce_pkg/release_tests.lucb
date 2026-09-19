@@ -1,0 +1,33 @@
+import pkg
+import crypto_native
+
+pub func main(arguments: str[]) -> i32!:
+    discard(arguments)
+    var seed: u8[32]
+    var pk: u8[1952]
+    var sk: u8[4032]
+    defer crypto_native.wipe(sk)
+    try crypto_native.mldsa_keygen(seed, pk, sk)
+    var digest: u8[32]
+    discard(try pkg.source_digest(b"source fixture", digest))
+    var release = pkg.Release(origin = "https://pkg.luciaos.com", package = "acme/demo", version = "1.2.3", commit = "0123456789012345678901234567890123456789", source_digest = digest, compiler = "luce-base", toolchain = "0.20.0")
+    var wire: u8[1600]
+    let size = try pkg.encode_release(release, wire)
+    assert(wire[0] == 'L' and wire[3] == '1' and wire[4] == 1 and wire[5] == 0)
+    assert(wire[6] == release.origin.length and wire[7] == 0)
+    var rnd: u8[32]
+    var signature: u8[3309]
+    try crypto_native.mldsa_sign(sk, wire[..<size], rnd, signature)
+    assert(try pkg.verify_release(release, pk, signature, b"source fixture"))
+    assert(not try pkg.verify_release(release, pk, signature, b"changed source"))
+    release.origin = "https://other.example"
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    release.origin = "https://pkg.luciaos.com"
+    release.version = "1.2.4"
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    release.version = "1.2.3"
+    signature[0] ^= 1
+    assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))
+    assert(not try pkg.verify_release(release, pk[..<1951], signature, b"source fixture"))
+    print("PASS native ML-DSA-65 release metadata and SHA-256 source binding")
+    return 0
