@@ -14,6 +14,10 @@ pub type Release = release.Release
 pub func encode_release(metadata: Release, output: u8[]) -> usize!:
     return try release.encode(metadata, output)
 
+## Returned fields borrow the input metadata bytes.
+pub func decode_release(metadata: const u8[]) -> Release!:
+    return try release.decode(metadata)
+
 pub func verify_release(metadata: Release, trusted_key: const u8[], signature: const u8[], source: const u8[]) -> bool!:
     return try release.verify(metadata, trusted_key, signature, source)
 

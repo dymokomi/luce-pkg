@@ -21,6 +21,13 @@ No untrusted embedded key is accepted as a trust root, and there is no classical
 signature fallback. Invalid metadata raises an error; failed signature/digest
 checks return false. Callers must treat both as rejection.
 
+`pkg.decode_release` parses downloaded metadata with bounded lengths and exact
+EOF, validates its fields through the canonical encoder, and rejects unknown
+schemas, truncation, trailing bytes and noncanonical representations. Returned
+strings/digest borrow the input: keep that buffer alive and unchanged through
+verification. Parsing alone does not authenticate it. The decoder is tested at
+every truncation boundary of a complete fixture.
+
 This API does not fetch keys, validate origin ownership or toolchain constraint
 semantics, enforce expiry/rollback protection, authorize publishers, unpack an
 archive, or install files. Registry-root roles and account-key custody remain

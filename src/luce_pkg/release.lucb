@@ -57,6 +57,30 @@ pub func encode(release: Release, out: u8[]) -> usize!:
         offset += 1
     return offset
 
+## All views borrow wire; callers must retain it unchanged for the view lifetime.
+pub func decode(wire: const u8[]) -> Release!:
+    if wire.length < 50 or wire.length > 1600:
+        error(invalid, "release metadata size outside bounds")
+    if wire[0] != 'L' or wire[1] != 'R' or wire[2] != 'S' or wire[3] != '1' or wire[4] != 1 or wire[5] != 0:
+        error(invalid, "unknown release metadata schema")
+    var fields: str[6]
+    var offset: usize = 6
+    for i in 0..<6:
+        if wire.length - offset < 2: error(invalid, "truncated release length")
+        let n = (usize)wire[offset] | ((usize)wire[offset + 1] << 8)
+        offset += 2
+        if n == 0 or n > 256 or n > wire.length - offset:
+            error(invalid, "invalid release field length")
+        fields[i] = (str)wire[offset..<offset + n]
+        offset += n
+    if wire.length - offset != 32: error(invalid, "release digest or trailing bytes invalid")
+    let result = Release(origin = fields[0], package = fields[1], version = fields[2], commit = fields[3], compiler = fields[4], toolchain = fields[5], source_digest = wire[offset..])
+    var canonical: u8[1600]
+    let size = try encode(result, canonical)
+    if size != wire.length or not crypto_native.equal(canonical[..<size], wire):
+        error(invalid, "noncanonical release metadata")
+    return result
+
 pub func verify(release: Release, trusted_key: const u8[], signature: const u8[], source: const u8[]) -> bool!:
     if trusted_key.length != 1952 or signature.length != 3309:
         return false
