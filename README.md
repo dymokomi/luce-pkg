@@ -1,6 +1,6 @@
 # luce-pkg
 
-Native Luce Base package identity, caret resolution and `luc.lock` handling.
+Native Luce Base package identity, dependency resolution and `luc.lock` handling.
 MIT OR Apache-2.0. Compilers still read `luce.toml`; this package owns the
 lockfile. No foreign solver.
 
@@ -86,6 +86,18 @@ version. `encode_lock(..., schema_version=2)` emits these pins; the default rema
 v1 for compatibility. Encoding pins as v1 fails instead of silently dropping them.
 V1 reads initialize both pin fields empty. Neither format establishes publisher
 trust or proves that a toolchain version uniquely identifies compiler binaries.
+
+Schema 3 is the canonical complete-graph lock profile. Packages must be in lexical
+coordinate order and add compiler `package_name`, current root `.` and the lowercase
+SHA-256 fingerprint of the independently trusted publisher key. Each nested
+`[[package.dependency]]` records the signed exact/caret requirement and the exact
+selected version. Dependencies are lexical and unique; every edge must target a
+locked package at that exact version and satisfy its requirement. The decoder also
+rejects missing targets, cycles, duplicate compiler identities and malformed
+coordinates/digests before exposing the lock. Limits are1MiB,256 packages and128
+edges per package. V1/v2 reject v3 fields rather than silently discarding them.
+Successful v3 parsing verifies internal graph consistency, not signatures,
+publisher authorization, catalog freshness or rollback protection.
 
 ```sh
 python3 tools/bootstrap.py

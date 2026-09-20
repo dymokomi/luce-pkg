@@ -9,6 +9,7 @@ import luce_pkg.manifest as manifest
 pub let invalid = semver.invalid
 pub type Version = semver.Version
 pub type Package = lock.Package
+pub type LockedDependency = lock.LockedDependency
 pub type Lock = lock.Lock
 pub type Candidate = resolve.Candidate
 pub type Resolution = resolve.Resolution

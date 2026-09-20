@@ -165,9 +165,8 @@ pub func main(arguments: str[]) -> i32!:
             recover pkg.Lock()
         rejected.close()
         assert(failed)
-    let malformed: str[8] = [
+    let malformed: str[7] = [
         "# origin = \"attacker\"\n",
-        "schema_version = 3\norigin = \"https://pkg.luciaos.com\"\n",
         "schema_version = 1\norigin = \"a\"\norigin = \"b\"\n",
         "schema_version = 1\norigin = \"a\"\n[[package]]\nname = \"x\"\n",
         "schema_version = 1\norigin = \"a\"\nunknown = 1\n",
