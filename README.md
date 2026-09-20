@@ -6,6 +6,16 @@ lockfile. No foreign solver.
 
 Experimental. Not a complete installer, TUF client or registry.
 
+`pkg.encode_versions` / `pkg.decode_versions` define the canonical LPV1 catalog
+used for registry version discovery: `LPV1`, a u16le count (maximum1024), then
+u8-length canonical numeric semantic versions in strict descending order. Exact
+framing, uniqueness, order, numeric bounds and trailing bytes are checked before
+selection. `pkg.select_version` accepts an exact version or a leading-`^` caret
+requirement and deterministically returns the highest compatible catalog text.
+The returned catalog views borrow their input. A catalog is advisory and does not
+replace verification of signed release metadata/source, publisher trust, catalog
+freshness or rollback protection.
+
 Numeric version components range from0 through18446744073709551615 (`u64`).
 Overflow is rejected before arithmetic, including in lockfiles, release metadata
 and dependency candidates; hostile oversized components return validation errors

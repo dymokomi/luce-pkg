@@ -64,6 +64,52 @@ pub func main(arguments: str[]) -> i32!:
     zero_catalog[2] = pkg.Candidate(name = "acme/zero", version = "0.2.0")
     let zero = try pkg.select_caret("acme/zero", "0.1.0", zero_catalog, 3)
     assert(zero.major == 0 and zero.minor == 1 and zero.patch == 9)
+    let version_text: str[4] = ["2.0.0", "1.9.3", "1.2.5", "0.9.0"]
+    var version_wire: u8[128]
+    let version_size = try pkg.encode_versions(version_text, version_text.length, version_wire)
+    var versions = try pkg.decode_versions(version_wire[..<version_size])
+    assert(versions.count == 4 and try versions.at(0) == "2.0.0" and try versions.at(3) == "0.9.0")
+    assert(try pkg.select_version(versions, "^1.2.0") == "1.9.3")
+    assert(try pkg.select_version(versions, "1.2.5") == "1.2.5")
+    for unavailable in ["^3.0.0", "1.2.4", "^0.8.0", "", "^", "^01.0.0"]:
+        failed = false
+        discard(pkg.select_version(versions, unavailable) catch failure:
+            assert(failure.code == pkg.invalid)
+            failed = true
+            recover "")
+        assert(failed)
+    for i in 0..<version_wire.length: version_wire[i] = 173
+    let unsorted: str[2] = ["1.0.0", "2.0.0"]
+    failed = false
+    discard(pkg.encode_versions(unsorted, 2, version_wire) catch failure:
+        assert(failure.code == pkg.invalid)
+        failed = true
+        recover 0)
+    assert(failed)
+    for byte in version_wire: assert(byte == 173)
+    let malformed_catalogs: str[2] = ["BAD!\0\0", "LPV1\0\0x"]
+    for malformed_catalog in malformed_catalogs:
+        failed = false
+        discard(pkg.decode_versions(malformed_catalog.bytes) catch failure:
+            assert(failure.code == pkg.invalid)
+            failed = true
+            recover pkg.Versions())
+        assert(failed)
+    var truncated_catalog: u8[8]
+    truncated_catalog[0] = 'L'
+    truncated_catalog[1] = 'P'
+    truncated_catalog[2] = 'V'
+    truncated_catalog[3] = '1'
+    truncated_catalog[4] = 1
+    for length in [6, 7, 8]:
+        truncated_catalog[6] = 4
+        truncated_catalog[7] = '1'
+        failed = false
+        discard(pkg.decode_versions(truncated_catalog[..<length]) catch failure:
+            assert(failure.code == pkg.invalid)
+            failed = true
+            recover pkg.Versions())
+        assert(failed)
     let origin = try pkg.lock_origin("schema_version = 1\norigin = \"https://pkg.luciaos.com\"\n")
     assert(origin == "https://pkg.luciaos.com")
     var packages: pkg.Package[1]
