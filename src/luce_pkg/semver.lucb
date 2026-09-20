@@ -16,9 +16,12 @@ func parse_part(text: str, at: usize, out_at: usize*) -> u64!:
     var value: u64
     var i = at
     while i < text.length and digit(text.bytes[i]):
-        let next = value * 10 + (u64)(text.bytes[i] - '0')
-        if next < value: error(invalid, "version part overflow")
-        value = next
+        let part = (u64)(text.bytes[i] - '0')
+        # Check before arithmetic: checked modes trap on overflow, while wrapping
+        # modes can produce a result larger than the old value and evade next<value.
+        if value > 1844674407370955161 or (value == 1844674407370955161 and part > 5):
+            error(invalid, "version part overflow")
+        value = value * 10 + part
         i += 1
     *out_at = i
     return value

@@ -6,6 +6,12 @@ lockfile. No foreign solver.
 
 Experimental. Not a complete installer, TUF client or registry.
 
+Numeric version components range from0 through18446744073709551615 (`u64`).
+Overflow is rejected before arithmetic, including in lockfiles, release metadata
+and dependency candidates; hostile oversized components return validation errors
+rather than triggering checked-arithmetic traps. Prerelease/build suffixes remain
+unsupported by this numeric version profile.
+
 The current encoder rejects quotes, backslashes and control bytes in literal
 fields to prevent TOML injection; invalid input leaves the output buffer unchanged.
 It uses restricted v1/v2 TOML profiles, not general TOML syntax. `decode_lock`

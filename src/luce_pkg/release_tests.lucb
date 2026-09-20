@@ -92,6 +92,31 @@ pub func main(arguments: str[]) -> i32!:
         assert(rejected)
         for byte in wire: assert(byte == 173)
     var small: u8[8]
+    # Build a canonical, maximum-width valid version then mutate only its digits.
+    # The decoder must return invalid, not trap on attacker-controlled wire data.
+    var boundary = release
+    boundary.version = "18446744073709551615.0.0"
+    let boundary_size = try pkg.encode_release(boundary, wire)
+    let version_start = 6 + 2 + release.origin.length + 2 + release.package.length + 2
+    let overflow_version = "30000000000000000000.0.0"
+    for i in 0..<overflow_version.length: wire[version_start + i] = overflow_version.bytes[i]
+    var overflow_rejected = false
+    discard(pkg.decode_release(wire[..<boundary_size]) catch failure:
+        assert(failure.code == pkg.invalid)
+        overflow_rejected = true
+        recover pkg.Release())
+    assert(overflow_rejected)
+    for oversized in ["18446744073709551616.0.0", "0.30000000000000000000.0", "0.0.36893488147419103231"]:
+        var bad = release
+        bad.version = oversized
+        for i in 0..<wire.length: wire[i] = 173
+        var rejected = false
+        discard(pkg.encode_release(bad, wire) catch failure:
+            assert(failure.code == pkg.invalid)
+            rejected = true
+            recover 0)
+        assert(rejected)
+        for byte in wire: assert(byte == 173)
     for i in 0..<small.length: small[i] = 173
     var short_output = false
     discard(pkg.encode_release(release, small) catch failure:

@@ -4,6 +4,35 @@ pub func main(arguments: str[]) -> i32!:
     discard(arguments)
     let v = try pkg.parse_version("1.2.3")
     assert(v.major == 1 and v.minor == 2 and v.patch == 3)
+    let largest = try pkg.parse_version("18446744073709551615.18446744073709551615.18446744073709551615")
+    assert(largest.major == 18446744073709551615 and largest.minor == largest.major and largest.patch == largest.major)
+    for oversized in ["18446744073709551616", "30000000000000000000", "36893488147419103231", "9999999999999999999999999999999999999999"]:
+        for component in 0..<3:
+            var buffer: u8[128]
+            let text = try format(buffer, f"{oversized}.0.0" if component == 0 else (f"0.{oversized}.0" if component == 1 else f"0.0.{oversized}"))
+            var rejected = false
+            discard(pkg.parse_version(text) catch failure:
+                assert(failure.code == pkg.invalid)
+                rejected = true
+                recover pkg.Version(0, 0, 0))
+            assert(rejected)
+            var candidates: pkg.Candidate[1]
+            candidates[0] = pkg.Candidate(name = "acme/demo", version = text)
+            rejected = false
+            discard(pkg.select_caret("acme/demo", "0.0.0", candidates, 1) catch failure:
+                assert(failure.code == pkg.invalid)
+                rejected = true
+                recover pkg.Version(0, 0, 0))
+            assert(rejected)
+            var lock_buffer: u8[512]
+            let document = try format(lock_buffer, f"schema_version = 1\norigin = \"registry\"\n[[package]]\nname = \"acme/demo\"\nversion = \"{text}\"\ndigest = \"ab\"\ncompiler = \"luce-base\"\n")
+            rejected = false
+            var invalid_lock = pkg.decode_lock(document) catch failure:
+                assert(failure.code == pkg.invalid)
+                rejected = true
+                recover pkg.Lock()
+            invalid_lock.close()
+            assert(rejected)
     var failed = false
     discard(pkg.parse_version("01.2.3") catch failure:
         assert(failure.code == pkg.invalid)
@@ -57,6 +86,16 @@ pub func main(arguments: str[]) -> i32!:
     defer v2.close()
     assert(v2.schema_version == 2 and v2.packages[0].commit == packages[0].commit)
     assert(v2.packages[0].toolchain == "0.20.0")
+    packages[0].toolchain = "30000000000000000000.0.0"
+    for i in 0..<encoded.length: encoded[i] = 173
+    failed = false
+    discard(pkg.encode_lock("https://pkg.luciaos.com", packages, 1, encoded, 2) catch failure:
+        assert(failure.code == pkg.invalid)
+        failed = true
+        recover 0)
+    assert(failed)
+    for byte in encoded: assert(byte == 173)
+    packages[0].toolchain = "0.20.0"
     failed = false
     discard(pkg.encode_lock("https://pkg.luciaos.com", packages, 1, encoded) catch:
         failed = true
