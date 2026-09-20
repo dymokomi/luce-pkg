@@ -11,10 +11,16 @@ pub type Package = lock.Package
 pub type Lock = lock.Lock
 pub type Candidate = resolve.Candidate
 pub type Release = release.Release
+pub type Dependency = release.Dependency
 pub type Versions = version_catalog.Versions
+pub let max_release_metadata: usize = release.max_metadata
+pub let max_release_dependencies: usize = release.max_dependencies
 
 pub func encode_release(metadata: Release, output: u8[]) -> usize!:
     return try release.encode(metadata, output)
+
+pub func encode_release_v2(metadata: Release, package_name: str, dependencies: const Dependency[], count: usize, output: u8[]) -> usize!:
+    return try release.encode_v2(metadata, package_name, dependencies, count, output)
 
 ## Returned fields borrow the input metadata bytes.
 pub func decode_release(metadata: const u8[]) -> Release!:

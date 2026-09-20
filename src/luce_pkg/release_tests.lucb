@@ -47,6 +47,116 @@ pub func main(arguments: str[]) -> i32!:
     try crypto_native.mldsa_sign(sk, wire[..<size], rnd, signature)
     assert(try pkg.verify_release(release, pk, signature, b"source fixture"))
     assert(try pkg.verify_release(parsed, pk, signature, b"source fixture"))
+    assert(parsed.schema_version == 1 and parsed.package_name.length == 0 and parsed.dependency_count == 0)
+    var dependency_index_rejected = false
+    discard(parsed.dependency_at(0) catch failure:
+        assert(failure.code == pkg.invalid)
+        dependency_index_rejected = true
+        recover pkg.Dependency())
+    assert(dependency_index_rejected)
+
+    # LRS2 signs the compiler package identity and a canonical dependency set.
+    var dependencies: pkg.Dependency[2]
+    dependencies[0] = pkg.Dependency(package = "acme/core", requirement = "^1.2.0")
+    dependencies[1] = pkg.Dependency(package = "tools/render-kit", requirement = "2.0.1")
+    var v2_wire: u8[24576]
+    let v2_size = try pkg.encode_release_v2(release, "demo", dependencies, dependencies.length, v2_wire)
+    assert((str)v2_wire[..<4] == "LRS2" and v2_wire[4] == 2 and v2_wire[5] == 0)
+    let v2 = try pkg.decode_release(v2_wire[..<v2_size])
+    assert(v2.schema_version == 2 and v2.package_name == "demo" and v2.dependency_count == 2)
+    let first = try v2.dependency_at(0)
+    let second = try v2.dependency_at(1)
+    assert(first.package == "acme/core" and first.requirement == "^1.2.0")
+    assert(second.package == "tools/render-kit" and second.requirement == "2.0.1")
+    dependency_index_rejected = false
+    discard(v2.dependency_at(2) catch failure:
+        assert(failure.code == pkg.invalid)
+        dependency_index_rejected = true
+        recover pkg.Dependency())
+    assert(dependency_index_rejected)
+    var v2_signature: u8[3309]
+    try crypto_native.mldsa_sign(sk, v2_wire[..<v2_size], rnd, v2_signature)
+    assert(try pkg.verify_release(v2, pk, v2_signature, b"source fixture"))
+    # A same-length valid dependency mutation still decodes, but cannot verify.
+    var requirement_at = v2_size
+    while requirement_at > 0 and v2_wire[requirement_at - 1] != '1': requirement_at -= 1
+    assert(requirement_at > 0)
+    v2_wire[requirement_at - 1] = '2'
+    let changed_dependency = try pkg.decode_release(v2_wire[..<v2_size])
+    assert(not try pkg.verify_release(changed_dependency, pk, v2_signature, b"source fixture"))
+    v2_wire[requirement_at - 1] = '1'
+    assert(try pkg.verify_release(try pkg.decode_release(v2_wire[..<v2_size]), pk, v2_signature, b"source fixture"))
+    for length in 0..<v2_size:
+        var rejected = false
+        discard(pkg.decode_release(v2_wire[..<length]) catch failure:
+            assert(failure.code == pkg.invalid)
+            rejected = true
+            recover pkg.Release())
+        assert(rejected)
+    v2_wire[v2_size] = 0
+    trailing_rejected = false
+    discard(pkg.decode_release(v2_wire[..<v2_size + 1]) catch failure:
+        assert(failure.code == pkg.invalid)
+        trailing_rejected = true
+        recover pkg.Release())
+    assert(trailing_rejected)
+
+    var invalid_dependencies: pkg.Dependency[2]
+    for kind in 0..<7:
+        invalid_dependencies[0] = pkg.Dependency(package = "acme/core", requirement = "^1.2.0")
+        invalid_dependencies[1] = pkg.Dependency(package = "tools/render-kit", requirement = "2.0.1")
+        var package_name = "demo"
+        var count: usize = 2
+        if kind == 0:
+            invalid_dependencies[0].package = "tools/render-kit"
+            invalid_dependencies[1].package = "acme/core"
+        elif kind == 1: invalid_dependencies[1].package = "acme/core"
+        elif kind == 2: invalid_dependencies[0].package = "acme/demo"
+        elif kind == 3: invalid_dependencies[0].package = "Bad/core"
+        elif kind == 4: invalid_dependencies[0].requirement = "^01.2.0"
+        elif kind == 5: package_name = "Bad-Name"
+        else: count = 3
+        for i in 0..<v2_wire.length: v2_wire[i] = 173
+        var rejected = false
+        discard(pkg.encode_release_v2(release, package_name, invalid_dependencies, count, v2_wire) catch failure:
+            assert(failure.code == pkg.invalid)
+            rejected = true
+            recover 0)
+        assert(rejected)
+        for byte in v2_wire: assert(byte == 173)
+    var excessive_dependencies: pkg.Dependency[129]
+    for i in 0..<v2_wire.length: v2_wire[i] = 173
+    var excessive_rejected = false
+    discard(pkg.encode_release_v2(release, "demo", excessive_dependencies, excessive_dependencies.length, v2_wire) catch failure:
+        assert(failure.code == pkg.invalid)
+        excessive_rejected = true
+        recover 0)
+    assert(excessive_rejected)
+    for byte in v2_wire: assert(byte == 173)
+
+    # Untrusted dependency counts and entry lengths are checked before indexing.
+    discard(try pkg.encode_release_v2(release, "demo", dependencies, dependencies.length, v2_wire))
+    var dependency_count_at: usize = 6
+    for i in 0..<7:
+        let field_size = (usize)v2_wire[dependency_count_at] | ((usize)v2_wire[dependency_count_at + 1] << 8)
+        dependency_count_at += 2 + field_size
+    dependency_count_at += 32
+    assert(v2_wire[dependency_count_at] == 2 and v2_wire[dependency_count_at + 1] == 0)
+    for malformed_kind in 0..<2:
+        let position = dependency_count_at if malformed_kind == 0 else dependency_count_at + 2
+        let old = v2_wire[position]
+        v2_wire[position] = 129 if malformed_kind == 0 else 0
+        var malformed_rejected = false
+        discard(pkg.decode_release(v2_wire[..<v2_size]) catch failure:
+            assert(failure.code == pkg.invalid)
+            malformed_rejected = true
+            recover pkg.Release())
+        assert(malformed_rejected)
+        v2_wire[position] = old
+    var empty_dependencies: pkg.Dependency[1]
+    let empty_v2_size = try pkg.encode_release_v2(release, "demo", empty_dependencies[..<0], 0, v2_wire)
+    let empty_v2 = try pkg.decode_release(v2_wire[..<empty_v2_size])
+    assert(empty_v2.schema_version == 2 and empty_v2.dependency_count == 0)
     assert(not try pkg.verify_release(release, pk, signature, b"changed source"))
     release.origin = "https://other.example"
     assert(not try pkg.verify_release(release, pk, signature, b"source fixture"))

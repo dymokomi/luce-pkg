@@ -6,6 +6,26 @@ lockfile. No foreign solver.
 
 Experimental. Not a complete installer, TUF client or registry.
 
+`pkg.encode_release_v2` defines signed LRS2 metadata. It retains the LRS1 origin,
+registry coordinate, version, Git commit, source SHA-256, language and toolchain
+fields, and additionally binds the compiler package identity plus a complete
+dependency declaration. Each dependency is a same-origin registry coordinate and
+an exact or caret numeric-semver requirement. Entries must be unique and sorted by
+coordinate, so equivalent graphs have one byte representation. A release cannot
+depend directly on itself. Bounds are128 dependencies,97-byte coordinates,
+63-byte requirements and24,576 bytes of total metadata. `Release.dependency_at`
+returns borrowed validated entries. ML-DSA verification covers these bytes and
+the source digest exactly.
+
+Legacy LRS1 remains decodable and verifiable for existing releases, but it has no
+compiler package identity or dependency declaration and therefore cannot be used
+as evidence of a complete dependency graph. A programmatic zero schema continues
+to encode as LRS1 for source compatibility; decoded releases explicitly report
+schema1 or2. Both schemas reject noncanonical framing and trailing data before
+use. LRS2 declares dependencies but does not itself resolve them, establish
+publisher trust/freshness, or prove that a source manifest matches the declaration;
+those are separate publication and resolver gates.
+
 `pkg.encode_versions` / `pkg.decode_versions` define the canonical LPV1 catalog
 used for registry version discovery: `LPV1`, a u16le count (maximum1024), then
 u8-length canonical numeric semantic versions in strict descending order. Exact
