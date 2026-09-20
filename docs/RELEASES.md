@@ -54,3 +54,20 @@ and dependency declaration must not be interpreted as a dependency-free LRS2
 release. New dependency-aware publication and resolution require schema2. Neither
 schema proves that a repository's `luce.toml` matches the signed declaration;
 publication must perform that independent source/manifest check.
+
+The shared check is `pkg.validate_release_manifest`. It accepts only LRS2 and
+requires the root manifest's `[package] name` and `language` to match signed
+metadata. Remote requirements are declared in a compiler-compatible table:
+
+```toml
+[registry.dependencies]
+"acme/core" = "^1.2.0"
+"tools/render-kit" = "2.0.1"
+```
+
+The compiler ignores this table; resolution later materializes its selected
+versions as ordinary local `[dependencies]` paths. The validator compares the
+complete set irrespective of source order, rejects duplicates and malformed or
+missing/extra declarations, and reads at most1MiB/128 entries. The registry still
+has to locate the root `luce.toml` in the signed commit and supply those exact
+blob bytes to this function.

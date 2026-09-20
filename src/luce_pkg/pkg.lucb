@@ -4,6 +4,7 @@ import luce_pkg.resolve as resolve
 import crypto_native
 import luce_pkg.release as release
 import luce_pkg.catalog as version_catalog
+import luce_pkg.manifest as manifest
 
 pub let invalid = semver.invalid
 pub type Version = semver.Version
@@ -28,6 +29,9 @@ pub func decode_release(metadata: const u8[]) -> Release!:
 
 pub func verify_release(metadata: Release, trusted_key: const u8[], signature: const u8[], source: const u8[]) -> bool!:
     return try release.verify(metadata, trusted_key, signature, source)
+
+pub func validate_release_manifest(metadata: Release, text: str) -> !:
+    try manifest.validate(metadata, text)
 
 pub func parse_version(text: str) -> Version!:
     return try semver.parse(text)

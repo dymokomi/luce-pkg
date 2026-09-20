@@ -26,6 +26,16 @@ use. LRS2 declares dependencies but does not itself resolve them, establish
 publisher trust/freshness, or prove that a source manifest matches the declaration;
 those are separate publication and resolver gates.
 
+`pkg.validate_release_manifest` closes the shared source-agreement half of that
+publication gate. For LRS2, the root `luce.toml` must contain matching `[package]`
+`name` and `language` values plus the complete dependency set under
+`[registry.dependencies]`, for example `"acme/core" = "^1.2.0"`. Quoted
+coordinates keep the file valid TOML; existing compilers ignore this new table.
+Declaration order is irrelevant, but duplicates, malformed coordinates or
+requirements, missing/extra entries, identity mismatches and legacy LRS1 are
+rejected. The parser is bounded to1MiB and128 dependencies and does not mutate
+the manifest. Server-side Git-tree extraction remains the caller's responsibility.
+
 `pkg.encode_versions` / `pkg.decode_versions` define the canonical LPV1 catalog
 used for registry version discovery: `LPV1`, a u16le count (maximum1024), then
 u8-length canonical numeric semantic versions in strict descending order. Exact

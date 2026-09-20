@@ -1,0 +1,131 @@
+## Restricted compiler-compatible release declarations in luce.toml.
+## Compilers ignore [registry.dependencies]; luc materializes [dependencies].
+from luce_pkg.semver import parse, invalid
+import luce_pkg.release as release
+
+func trim(value: str) -> str:
+    var start: usize
+    var end = value.length
+    while start < end and (value.bytes[start] == ' ' or value.bytes[start] == '\t' or value.bytes[start] == '\r'):
+        start += 1
+    while end > start and (value.bytes[end - 1] == ' ' or value.bytes[end - 1] == '\t' or value.bytes[end - 1] == '\r'):
+        end -= 1
+    return (str)value.bytes[start..<end]
+
+## Nonempty basic string without escapes; a trailing full comment is accepted.
+func literal(value: str) -> str!:
+    let text = trim(value)
+    if text.length < 2 or text.bytes[0] != '"': error(invalid, "manifest field must be a quoted string")
+    var end: usize = 1
+    while end < text.length and text.bytes[end] != '"':
+        let byte = text.bytes[end]
+        if byte < 32 or byte == 127 or byte == '\\': error(invalid, "unsupported manifest string syntax")
+        end += 1
+    if end == 1 or end == text.length: error(invalid, "empty or unterminated manifest string")
+    let rest = trim((str)text.bytes[end + 1..])
+    if rest.length > 0 and rest.bytes[0] != '#': error(invalid, "trailing manifest string syntax")
+    return (str)text.bytes[1..<end]
+
+func coordinate(value: str) -> !:
+    if value.length < 3 or value.length > 97: error(invalid, "invalid manifest package coordinate")
+    var slash = value.length
+    for i in 0..<value.length:
+        if value.bytes[i] == '/':
+            if slash != value.length: error(invalid, "invalid manifest package coordinate")
+            slash = i
+    if slash == 0 or slash > 32 or slash == value.length or value.length - slash - 1 > 64:
+        error(invalid, "invalid manifest package coordinate")
+    for i in 0..<slash:
+        let byte = value.bytes[i]
+        if not ((byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9') or byte == '_'):
+            error(invalid, "invalid manifest package owner")
+    for i in slash + 1..<value.length:
+        let byte = value.bytes[i]
+        let alnum = (byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9')
+        if not alnum and (i == slash + 1 or (byte != '_' and byte != '-')):
+            error(invalid, "invalid manifest package name")
+
+func requirement(value: str) -> !:
+    if value.length == 0 or value.length > 63: error(invalid, "invalid manifest dependency requirement")
+    discard(try parse((str)value.bytes[1..] if value.bytes[0] == '^' else value))
+
+func lexical(left: str, right: str) -> i32:
+    let shared = left.length if left.length < right.length else right.length
+    for i in 0..<shared:
+        if left.bytes[i] < right.bytes[i]: return -1
+        if left.bytes[i] > right.bytes[i]: return 1
+    if left.length < right.length: return -1
+    if left.length > right.length: return 1
+    return 0
+
+func sort(values: release.Dependency[], count: usize):
+    for i in 1..<count:
+        let current = values[i]
+        var at = i
+        while at > 0 and lexical(current.package, values[at - 1].package) < 0:
+            values[at] = values[at - 1]
+            at -= 1
+        values[at] = current
+
+## Require root manifest identity/language and the complete remote dependency set
+## to match signed LRS2 metadata. Input and returned release views are borrowed.
+pub func validate(metadata: release.Release, text: str) -> !:
+    if metadata.schema_version != 2: error(invalid, "dependency-aware publication requires LRS2")
+    if text.length == 0 or text.length > 1048576: error(invalid, "release manifest size outside bounds")
+    var name = ""
+    var language = ""
+    var name_seen = false
+    var language_seen = false
+    var registry_seen = false
+    var section = ""
+    var dependencies: release.Dependency[128]
+    var count: usize
+    var start: usize
+    for end in 0..<text.length + 1:
+        if end != text.length and text.bytes[end] != '\n': continue
+        let line = trim((str)text.bytes[start..<end]) if end > start else ""
+        start = end + 1
+        if line.length == 0 or line.bytes[0] == '#': continue
+        if line.bytes[0] == '[':
+            if line.bytes[line.length - 1] != ']': error(invalid, "invalid manifest section")
+            section = line
+            if section == "[registry.dependencies]":
+                if registry_seen: error(invalid, "duplicate registry dependency section")
+                registry_seen = true
+            continue
+        var equal = line.length
+        for i in 0..<line.length:
+            if line.bytes[i] == '=':
+                equal = i
+                break
+        if section != "[package]" and section != "[registry.dependencies]": continue
+        if equal == 0 or equal == line.length: error(invalid, "invalid release manifest assignment")
+        let key = trim((str)line.bytes[..<equal])
+        let value = try literal((str)line.bytes[equal + 1..])
+        if section == "[package]":
+            if key == "name":
+                if name_seen: error(invalid, "duplicate manifest package name")
+                name_seen = true
+                name = value
+            elif key == "language":
+                if language_seen: error(invalid, "duplicate manifest package language")
+                language_seen = true
+                language = value
+        else:
+            if count >= dependencies.length: error(invalid, "too many manifest dependencies")
+            let package = try literal(key)
+            try coordinate(package)
+            try requirement(value)
+            for i in 0..<count:
+                if dependencies[i].package == package: error(invalid, "duplicate manifest dependency")
+            dependencies[count] = release.Dependency(package = package, requirement = value)
+            count += 1
+    if not name_seen or not language_seen: error(invalid, "release manifest lacks package identity or language")
+    if name != metadata.package_name or language != metadata.compiler:
+        error(invalid, "release manifest identity does not match signed metadata")
+    if count != metadata.dependency_count: error(invalid, "release manifest dependency count mismatch")
+    sort(dependencies, count)
+    for i in 0..<count:
+        let signed = try metadata.dependency_at(i)
+        if dependencies[i].package != signed.package or dependencies[i].requirement != signed.requirement:
+            error(invalid, "release manifest dependencies do not match signed metadata")
