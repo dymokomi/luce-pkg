@@ -1,4 +1,10 @@
+import memory
+import luce_pkg.release as release
 from luce_pkg.semver import Version, parse, compare, matches_caret, invalid
+
+pub let max_graph_packages: usize = 256
+pub let max_graph_candidates: usize = 4096
+let max_graph_work: usize = 67108864
 
 pub struct Candidate:
     pub var name: str
@@ -19,3 +25,218 @@ pub func select_caret(name: str, requirement: str, catalog: const Candidate[], c
             found = true
     if not found: error(invalid, "no candidate satisfies the caret requirement")
     return best
+
+## Owning deterministic selection. Indices address the caller's release catalog;
+## keep that catalog and its borrowed metadata storage alive while using them.
+pub struct Resolution:
+    var indices: usize[]
+    pub var count: usize
+
+    pub func candidate_index(index: usize) -> usize!:
+        if index >= self.count: error(invalid, "resolved package index out of bounds")
+        return self.indices[index]
+
+    pub mutating func close():
+        if self.indices.length > 0: free(self.indices) in memory.heap
+        var empty: usize[]
+        self.indices = empty
+        self.count = 0
+
+func lexical(left: str, right: str) -> i32:
+    let shared = left.length if left.length < right.length else right.length
+    for i in 0..<shared:
+        if left.bytes[i] < right.bytes[i]: return -1
+        if left.bytes[i] > right.bytes[i]: return 1
+    if left.length < right.length: return -1
+    if left.length > right.length: return 1
+    return 0
+
+func coordinate(value: str) -> !:
+    if value.length < 3 or value.length > 97: error(invalid, "invalid dependency coordinate")
+    var slash = value.length
+    for i in 0..<value.length:
+        if value.bytes[i] == '/':
+            if slash != value.length: error(invalid, "invalid dependency coordinate")
+            slash = i
+    if slash == 0 or slash > 32 or slash == value.length or value.length - slash - 1 > 64:
+        error(invalid, "invalid dependency coordinate")
+    for i in 0..<slash:
+        let byte = value.bytes[i]
+        if not ((byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9') or byte == '_'):
+            error(invalid, "invalid dependency owner")
+    for i in slash + 1..<value.length:
+        let byte = value.bytes[i]
+        let alnum = (byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9')
+        if not alnum and (i == slash + 1 or (byte != '_' and byte != '-')):
+            error(invalid, "invalid dependency package")
+
+func satisfies(requirement: str, have: Version) -> bool!:
+    if requirement.length == 0: error(invalid, "empty dependency requirement")
+    if requirement.bytes[0] == '^':
+        if requirement.length == 1: error(invalid, "empty caret dependency requirement")
+        return matches_caret(try parse((str)requirement.bytes[1..]), have)
+    return compare(try parse(requirement), have) == 0
+
+struct Solver:
+    var roots: const release.Dependency[]
+    var root_count: usize
+    var releases: const release.Release[]
+    var release_count: usize
+    var order: usize[]
+    var versions: Version[]
+    var selected: usize[]
+    var selected_count: usize
+    var marks: u8[]
+    var work: usize
+
+func tick(solver: Solver*) -> !:
+    if solver.work == 0: error(invalid, "dependency resolution work limit exceeded")
+    solver.work -= 1
+
+func selected_slot(solver: Solver*, package: str) -> usize?!:
+    for i in 0..<solver.selected_count:
+        try tick(solver)
+        if solver.releases[solver.selected[i]].package == package: return i
+    return none
+
+func consider(solver: Solver*, dependency: release.Dependency, next: str*, pending: bool*) -> bool!:
+    try tick(solver)
+    if let slot = try selected_slot(solver, dependency.package):
+        return try satisfies(dependency.requirement, solver.versions[solver.selected[slot]])
+    if not *pending or lexical(dependency.package, *next) < 0:
+        *next = dependency.package
+        *pending = true
+    return true
+
+func candidate_satisfies(solver: Solver*, index: usize) -> bool!:
+    let candidate = solver.releases[index]
+    for i in 0..<solver.root_count:
+        try tick(solver)
+        let dependency = solver.roots[i]
+        if dependency.package == candidate.package and not try satisfies(dependency.requirement, solver.versions[index]):
+            return false
+    for i in 0..<solver.selected_count:
+        let parent = solver.releases[solver.selected[i]]
+        for j in 0..<parent.dependency_count:
+            try tick(solver)
+            let dependency = try parent.dependency_at(j)
+            if dependency.package == candidate.package and not try satisfies(dependency.requirement, solver.versions[index]):
+                return false
+    return true
+
+func identity_available(solver: Solver*, index: usize) -> bool!:
+    let candidate = solver.releases[index]
+    for i in 0..<solver.selected_count:
+        try tick(solver)
+        let existing = solver.releases[solver.selected[i]]
+        if existing.package_name == candidate.package_name and existing.package != candidate.package: return false
+    return true
+
+func visit(solver: Solver*, slot: usize) -> bool!:
+    try tick(solver)
+    if solver.marks[slot] == 1: return false
+    if solver.marks[slot] == 2: return true
+    solver.marks[slot] = 1
+    let candidate = solver.releases[solver.selected[slot]]
+    for i in 0..<candidate.dependency_count:
+        let dependency = try candidate.dependency_at(i)
+        let target = (try selected_slot(solver, dependency.package)) else error(invalid, "resolved graph is missing a dependency")
+        if not try visit(solver, target): return false
+    solver.marks[slot] = 2
+    return true
+
+func acyclic(solver: Solver*) -> bool!:
+    for i in 0..<solver.selected_count: solver.marks[i] = 0
+    for i in 0..<solver.selected_count:
+        if solver.marks[i] == 0 and not try visit(solver, i): return false
+    return true
+
+func search(solver: Solver*) -> bool!:
+    try tick(solver)
+    var next = ""
+    var pending = false
+    for i in 0..<solver.root_count:
+        if not try consider(solver, solver.roots[i], &next, &pending): return false
+    for i in 0..<solver.selected_count:
+        let candidate = solver.releases[solver.selected[i]]
+        for j in 0..<candidate.dependency_count:
+            if not try consider(solver, try candidate.dependency_at(j), &next, &pending): return false
+    if not pending: return try acyclic(solver)
+    if solver.selected_count >= max_graph_packages: error(invalid, "resolved graph package limit exceeded")
+    for i in 0..<solver.release_count:
+        let index = solver.order[i]
+        try tick(solver)
+        if solver.releases[index].package != next: continue
+        if not try candidate_satisfies(solver, index): continue
+        if not try identity_available(solver, index): continue
+        solver.selected[solver.selected_count] = index
+        solver.selected_count += 1
+        if try search(solver): return true
+        solver.selected_count -= 1
+    return false
+
+func before(releases: const release.Release[], versions: const Version[], left: usize, right: usize) -> bool:
+    let order = lexical(releases[left].package, releases[right].package)
+    if order != 0: return order < 0
+    return compare(versions[left], versions[right]) > 0
+
+func release_indices(values: usize[]):
+    if values.length > 0: free(values) in memory.heap
+
+func release_versions(values: Version[]):
+    if values.length > 0: free(values) in memory.heap
+
+## Resolve a complete same-origin LRS2 universe without network access. Catalog
+## order never affects the result. Highest compatible versions are tried first;
+## lexical package coordinates choose the next unresolved node. Conflicting
+## constraints, dependency cycles and compiler-identity collisions are rejected.
+pub func graph(origin: str, roots: const release.Dependency[], root_count: usize,
+               releases: const release.Release[], release_count: usize) -> Resolution!:
+    if root_count > roots.length or root_count > release.max_dependencies:
+        error(invalid, "root dependency count exceeds limit")
+    if release_count > releases.length or release_count > max_graph_candidates:
+        error(invalid, "release candidate count exceeds limit")
+    for i in 0..<root_count:
+        try coordinate(roots[i].package)
+        discard(try satisfies(roots[i].requirement, Version()))
+    var order: usize[]
+    var versions: Version[]
+    if release_count > 0: order = try alloc usize[release_count] in memory.heap
+    defer release_indices(order)
+    if release_count > 0: versions = try alloc Version[release_count] in memory.heap
+    defer release_versions(versions)
+    var canonical: u8[release.max_metadata]
+    for i in 0..<release_count:
+        if releases[i].schema_version != 2: error(invalid, "graph resolution requires LRS2 candidates")
+        if releases[i].origin != origin: error(invalid, "release candidate origin mismatch")
+        discard(try release.encode(releases[i], canonical))
+        versions[i] = try parse(releases[i].version)
+        order[i] = i
+    for i in 1..<release_count:
+        let current = order[i]
+        var at = i
+        while at > 0 and before(releases, versions, current, order[at - 1]):
+            order[at] = order[at - 1]
+            at -= 1
+        order[at] = current
+    for i in 1..<release_count:
+        let left = releases[order[i - 1]]
+        let right = releases[order[i]]
+        if left.package == right.package and compare(versions[order[i - 1]], versions[order[i]]) == 0:
+            error(invalid, "duplicate release candidate")
+    var selected = try alloc usize[max_graph_packages] in memory.heap
+    errdefer free(selected) in memory.heap
+    let marks = try alloc u8[max_graph_packages] in memory.heap
+    defer free(marks) in memory.heap
+    var solver = Solver(roots = roots, root_count = root_count, releases = releases,
+        release_count = release_count, order = order, versions = versions,
+        selected = selected, marks = marks, work = max_graph_work)
+    if not try search(&solver): error(invalid, "dependency graph has no valid resolution")
+    for i in 1..<solver.selected_count:
+        let current = selected[i]
+        var at = i
+        while at > 0 and lexical(releases[current].package, releases[selected[at - 1]].package) < 0:
+            selected[at] = selected[at - 1]
+            at -= 1
+        selected[at] = current
+    return Resolution(indices = selected, count = solver.selected_count)

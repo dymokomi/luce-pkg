@@ -6,6 +6,21 @@ lockfile. No foreign solver.
 
 Experimental. Not a complete installer, TUF client or registry.
 
+`pkg.resolve_graph` is the bounded offline LRS2 graph solver. It accepts root
+exact/caret requirements plus a same-origin universe of canonical LRS2 releases,
+then selects one release per registry coordinate. The result is independent of
+input order: unresolved coordinates are considered lexically and versions are
+tried highest-first. The solver accumulates every transitive constraint and
+backtracks when a high version makes the remaining graph impossible. It rejects
+unsatisfied intersections, dependency cycles, duplicate coordinate/version
+candidates and two registry coordinates that claim the same compiler package
+identity. Results are returned in lexical coordinate order as indices into the
+caller's catalog. Bounds are128 roots,256 selected packages,4,096 candidates and
+67,108,864 work units; exceeding any bound fails rather than returning a partial
+graph. Catalog and decoded-metadata storage must remain alive until the owning
+`Resolution` is closed. This API performs no network access and does not establish
+publisher trust; callers supply already authenticated metadata.
+
 `pkg.encode_release_v2` defines signed LRS2 metadata. It retains the LRS1 origin,
 registry coordinate, version, Git commit, source SHA-256, language and toolchain
 fields, and additionally binds the compiler package identity plus a complete
@@ -22,9 +37,9 @@ compiler package identity or dependency declaration and therefore cannot be used
 as evidence of a complete dependency graph. A programmatic zero schema continues
 to encode as LRS1 for source compatibility; decoded releases explicitly report
 schema1 or2. Both schemas reject noncanonical framing and trailing data before
-use. LRS2 declares dependencies but does not itself resolve them, establish
+use. LRS2 declares dependencies but does not by itself resolve them, establish
 publisher trust/freshness, or prove that a source manifest matches the declaration;
-those are separate publication and resolver gates.
+`resolve_graph` and the publication manifest validator are separate explicit gates.
 
 `pkg.validate_release_manifest` closes the shared source-agreement half of that
 publication gate. For LRS2, the root `luce.toml` must contain matching `[package]`

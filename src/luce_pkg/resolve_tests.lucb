@@ -1,0 +1,162 @@
+import pkg
+
+let origin = "https://pkg.luciaos.com"
+var digest: u8[32]
+
+func make(package: str, version: str, package_name: str, dependencies: const pkg.Dependency[],
+          wire: u8[]) -> pkg.Release!:
+    let value = pkg.Release(origin = origin, package = package, version = version,
+        commit = "0123456789012345678901234567890123456789", source_digest = digest,
+        compiler = "luce-base", toolchain = "0.20.0")
+    let size = try pkg.encode_release_v2(value, package_name, dependencies, dependencies.length, wire)
+    return try pkg.decode_release(wire[..<size])
+
+func rejected(roots: const pkg.Dependency[], candidates: const pkg.Release[]) -> bool:
+    var failed = false
+    var result = pkg.resolve_graph(origin, roots, roots.length, candidates, candidates.length) catch failure:
+        assert(failure.code == pkg.invalid)
+        failed = true
+        recover pkg.Resolution()
+    result.close()
+    return failed
+
+pub func main(arguments: str[]) -> i32!:
+    discard(arguments)
+    discard(try pkg.source_digest(b"resolver fixture", digest))
+    var empty_dependencies: pkg.Dependency[1]
+    var dep_a12: pkg.Dependency[1]
+    dep_a12[0] = pkg.Dependency(package = "acme/b", requirement = "^2.0.0")
+    var dep_a11: pkg.Dependency[1]
+    dep_a11[0] = pkg.Dependency(package = "acme/b", requirement = "^1.0.0")
+    var dep_c: pkg.Dependency[1]
+    dep_c[0] = pkg.Dependency(package = "acme/b", requirement = "^1.5.0")
+    var wires: u8[6][2048]
+    var candidates: pkg.Release[6]
+    # Deliberately scrambled. Highest A is incompatible with C, so the solver
+    # must backtrack to A1.1 before selecting the highest shared B1.x.
+    candidates[0] = try make("acme/b", "1.9.0", "b", empty_dependencies[..<0], wires[0])
+    candidates[1] = try make("acme/a", "1.2.0", "a", dep_a12, wires[1])
+    candidates[2] = try make("acme/c", "1.0.0", "c", dep_c, wires[2])
+    candidates[3] = try make("acme/b", "2.1.0", "b", empty_dependencies[..<0], wires[3])
+    candidates[4] = try make("acme/a", "1.1.0", "a", dep_a11, wires[4])
+    candidates[5] = try make("acme/b", "1.5.0", "b", empty_dependencies[..<0], wires[5])
+    var roots: pkg.Dependency[2]
+    roots[0] = pkg.Dependency(package = "acme/c", requirement = "1.0.0")
+    roots[1] = pkg.Dependency(package = "acme/a", requirement = "^1.0.0")
+    var result = try pkg.resolve_graph(origin, roots, roots.length, candidates, candidates.length)
+    defer result.close()
+    assert(result.count == 3)
+    let a = candidates[try result.candidate_index(0)]
+    let b = candidates[try result.candidate_index(1)]
+    let c = candidates[try result.candidate_index(2)]
+    assert(a.package == "acme/a" and a.version == "1.1.0")
+    assert(b.package == "acme/b" and b.version == "1.9.0")
+    assert(c.package == "acme/c" and c.version == "1.0.0")
+    var out_of_bounds = false
+    discard(result.candidate_index(3) catch:
+        out_of_bounds = true
+        recover 0)
+    assert(out_of_bounds)
+
+    # Reversing the entire candidate universe cannot change the chosen graph.
+    var reversed: pkg.Release[6]
+    for i in 0..<candidates.length: reversed[i] = candidates[candidates.length - i - 1]
+    var again = try pkg.resolve_graph(origin, roots, roots.length, reversed, reversed.length)
+    defer again.close()
+    assert(again.count == 3)
+    assert(reversed[try again.candidate_index(0)].version == "1.1.0")
+    assert(reversed[try again.candidate_index(1)].version == "1.9.0")
+
+    # Unsatisfied exact/caret intersections are rejected.
+    var impossible: pkg.Dependency[2]
+    impossible[0] = pkg.Dependency(package = "acme/b", requirement = "1.5.0")
+    impossible[1] = pkg.Dependency(package = "acme/b", requirement = "2.1.0")
+    assert(rejected(impossible, candidates))
+
+    # Duplicate coordinate/version records make the universe ambiguous.
+    var duplicate: pkg.Release[2]
+    duplicate[0] = candidates[0]
+    duplicate[1] = candidates[0]
+    var root_b: pkg.Dependency[1]
+    root_b[0] = pkg.Dependency(package = "acme/b", requirement = "^1.0.0")
+    assert(rejected(root_b, duplicate))
+
+    # Dependency cycles are never emitted as a compiler graph.
+    var to_y: pkg.Dependency[1]
+    var to_x: pkg.Dependency[1]
+    to_y[0] = pkg.Dependency(package = "cycle/y", requirement = "1.0.0")
+    to_x[0] = pkg.Dependency(package = "cycle/x", requirement = "1.0.0")
+    var cycle_wires: u8[3][2048]
+    var cycle: pkg.Release[3]
+    cycle[0] = try make("cycle/x", "1.0.0", "x", to_y, cycle_wires[0])
+    cycle[1] = try make("cycle/y", "1.0.0", "y", to_x, cycle_wires[1])
+    var root_x: pkg.Dependency[1]
+    root_x[0] = pkg.Dependency(package = "cycle/x", requirement = "1.0.0")
+    assert(rejected(root_x, cycle[..<2]))
+    # A cyclic highest version does not poison lower acyclic solutions.
+    cycle[0] = try make("cycle/x", "1.1.0", "x", to_y, cycle_wires[0])
+    cycle[1] = try make("cycle/x", "1.0.0", "x", empty_dependencies[..<0], cycle_wires[1])
+    cycle[2] = try make("cycle/y", "1.0.0", "y", to_x, cycle_wires[2])
+    root_x[0].requirement = "^1.0.0"
+    var cycle_fallback = try pkg.resolve_graph(origin, root_x, 1, cycle, cycle.length)
+    assert(cycle_fallback.count == 1)
+    assert(cycle[try cycle_fallback.candidate_index(0)].version == "1.0.0")
+    cycle_fallback.close()
+
+    # Two registry coordinates may not inject the same compiler identity.
+    var identity_wires: u8[2][2048]
+    var identity: pkg.Release[2]
+    identity[0] = try make("one/shared", "1.0.0", "shared", empty_dependencies[..<0], identity_wires[0])
+    identity[1] = try make("two/shared", "1.0.0", "shared", empty_dependencies[..<0], identity_wires[1])
+    var both: pkg.Dependency[2]
+    both[0] = pkg.Dependency(package = "one/shared", requirement = "1.0.0")
+    both[1] = pkg.Dependency(package = "two/shared", requirement = "1.0.0")
+    assert(rejected(both, identity))
+
+    # Every candidate is canonical LRS2 and same-origin, not just selected ones.
+    var legacy_wire: u8[1600]
+    let legacy_value = pkg.Release(origin = origin, package = "acme/legacy", version = "1.0.0",
+        commit = "0123456789012345678901234567890123456789", source_digest = digest,
+        compiler = "luce-base", toolchain = "0.20.0")
+    let legacy_size = try pkg.encode_release(legacy_value, legacy_wire)
+    var legacy: pkg.Release[1]
+    legacy[0] = try pkg.decode_release(legacy_wire[..<legacy_size])
+    var root_legacy: pkg.Dependency[1]
+    root_legacy[0] = pkg.Dependency(package = "acme/legacy", requirement = "1.0.0")
+    assert(rejected(root_legacy, legacy))
+    var wrong_origin_wire: u8[2048]
+    var wrong = candidates[0]
+    wrong.origin = "https://other.invalid"
+    var wrong_origin: pkg.Release[1]
+    let wrong_size = try pkg.encode_release_v2(wrong, "b", empty_dependencies[..<0], 0, wrong_origin_wire)
+    wrong_origin[0] = try pkg.decode_release(wrong_origin_wire[..<wrong_size])
+    assert(rejected(root_b, wrong_origin))
+
+    for malformed in ["bad", "^", "^01.0.0", "1.0"]:
+        var bad_root: pkg.Dependency[1]
+        bad_root[0] = pkg.Dependency(package = "acme/b", requirement = malformed)
+        assert(rejected(bad_root, candidates))
+    var bad_coordinate: pkg.Dependency[1]
+    bad_coordinate[0] = pkg.Dependency(package = "Bad/b", requirement = "1.0.0")
+    assert(rejected(bad_coordinate, candidates))
+    var count_failed = false
+    var bounded = pkg.resolve_graph(origin, root_b, 2, candidates, candidates.length) catch failure:
+        assert(failure.code == pkg.invalid)
+        count_failed = true
+        recover pkg.Resolution()
+    bounded.close()
+    assert(count_failed)
+    count_failed = false
+    bounded = pkg.resolve_graph(origin, root_b, 1, candidates, candidates.length + 1) catch failure:
+        assert(failure.code == pkg.invalid)
+        count_failed = true
+        recover pkg.Resolution()
+    bounded.close()
+    assert(count_failed)
+
+    # Empty roots produce an empty owning result.
+    var empty = try pkg.resolve_graph(origin, empty_dependencies[..<0], 0, candidates, candidates.length)
+    assert(empty.count == 0)
+    empty.close()
+    print("PASS deterministic bounded transitive dependency resolution")
+    return 0

@@ -11,11 +11,14 @@ pub type Version = semver.Version
 pub type Package = lock.Package
 pub type Lock = lock.Lock
 pub type Candidate = resolve.Candidate
+pub type Resolution = resolve.Resolution
 pub type Release = release.Release
 pub type Dependency = release.Dependency
 pub type Versions = version_catalog.Versions
 pub let max_release_metadata: usize = release.max_metadata
 pub let max_release_dependencies: usize = release.max_dependencies
+pub let max_graph_packages: usize = resolve.max_graph_packages
+pub let max_graph_candidates: usize = resolve.max_graph_candidates
 
 pub func encode_release(metadata: Release, output: u8[]) -> usize!:
     return try release.encode(metadata, output)
@@ -38,6 +41,10 @@ pub func parse_version(text: str) -> Version!:
 
 pub func select_caret(name: str, requirement: str, catalog: const Candidate[], count: usize) -> Version!:
     return try resolve.select_caret(name, requirement, catalog, count)
+
+pub func resolve_graph(origin: str, roots: const Dependency[], root_count: usize,
+                       releases: const Release[], release_count: usize) -> Resolution!:
+    return try resolve.graph(origin, roots, root_count, releases, release_count)
 
 pub func encode_versions(versions: const str[], count: usize, output: u8[]) -> usize!:
     return try version_catalog.encode(versions, count, output)

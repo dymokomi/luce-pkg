@@ -55,6 +55,14 @@ release. New dependency-aware publication and resolution require schema2. Neithe
 schema proves that a repository's `luce.toml` matches the signed declaration;
 publication must perform that independent source/manifest check.
 
+`pkg.resolve_graph` consumes only canonical, same-origin LRS2 metadata. It uses
+deterministic lexical coordinate selection and descending versions, backtracking
+across transitive conflicts. One coordinate has one selected version and one
+compiler package identity has one selected provider. Duplicate candidate versions,
+cycles, unsatisfied exact/caret intersections, identity collisions and resource
+limit exhaustion are errors. The owning result contains lexical-order indices
+into the caller's release catalog; it does not duplicate or authenticate metadata.
+
 The shared check is `pkg.validate_release_manifest`. It accepts only LRS2 and
 requires the root manifest's `[package] name` and `language` to match signed
 metadata. Remote requirements are declared in a compiler-compatible table:
