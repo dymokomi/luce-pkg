@@ -2,6 +2,27 @@
 ## Compilers ignore [registry.dependencies]; luc materializes [dependencies].
 from luce_pkg.semver import parse, invalid
 import luce_pkg.release as release
+import memory
+
+## Parsed compiler-compatible package declarations. Strings borrow the input
+## manifest; only the canonical dependency array is owned by this value.
+pub struct Manifest:
+    pub var name: str
+    pub var language: str
+    var dependencies: release.Dependency[]
+    pub var dependency_count: usize
+
+    pub func dependency_at(index: usize) -> release.Dependency!:
+        if index >= self.dependency_count: error(invalid, "manifest dependency index out of bounds")
+        return self.dependencies[index]
+
+    pub mutating func close():
+        if self.dependencies.length > 0: free(self.dependencies) in memory.heap
+        var empty: release.Dependency[]
+        self.dependencies = empty
+        self.dependency_count = 0
+        self.name = ""
+        self.language = ""
 
 func trim(value: str) -> str:
     var start: usize
@@ -67,10 +88,9 @@ func sort(values: release.Dependency[], count: usize):
             at -= 1
         values[at] = current
 
-## Require root manifest identity/language and the complete remote dependency set
-## to match signed LRS2 metadata. Input and returned release views are borrowed.
-pub func validate(metadata: release.Release, text: str) -> !:
-    if metadata.schema_version != 2: error(invalid, "dependency-aware publication requires LRS2")
+## Parse the restricted compiler-compatible declaration shared by publishers and
+## package clients. Dependency coordinates are returned in lexical order.
+pub func decode(text: str) -> Manifest!:
     if text.length == 0 or text.length > 1048576: error(invalid, "release manifest size outside bounds")
     var name = ""
     var language = ""
@@ -121,11 +141,25 @@ pub func validate(metadata: release.Release, text: str) -> !:
             dependencies[count] = release.Dependency(package = package, requirement = value)
             count += 1
     if not name_seen or not language_seen: error(invalid, "release manifest lacks package identity or language")
-    if name != metadata.package_name or language != metadata.compiler:
-        error(invalid, "release manifest identity does not match signed metadata")
-    if count != metadata.dependency_count: error(invalid, "release manifest dependency count mismatch")
+    if language != "luce" and language != "luce-base": error(invalid, "unknown manifest package language")
     sort(dependencies, count)
-    for i in 0..<count:
+    var owned: release.Dependency[]
+    if count > 0:
+        owned = try alloc release.Dependency[count] in memory.heap
+        for i in 0..<count: owned[i] = dependencies[i]
+    return Manifest(name = name, language = language, dependencies = owned, dependency_count = count)
+
+## Require root manifest identity/language and the complete remote dependency set
+## to match signed LRS2 metadata. Input and returned release views are borrowed.
+pub func validate(metadata: release.Release, text: str) -> !:
+    if metadata.schema_version != 2: error(invalid, "dependency-aware publication requires LRS2")
+    var manifest = try decode(text)
+    defer manifest.close()
+    if manifest.name != metadata.package_name or manifest.language != metadata.compiler:
+        error(invalid, "release manifest identity does not match signed metadata")
+    if manifest.dependency_count != metadata.dependency_count: error(invalid, "release manifest dependency count mismatch")
+    for i in 0..<manifest.dependency_count:
         let signed = try metadata.dependency_at(i)
-        if dependencies[i].package != signed.package or dependencies[i].requirement != signed.requirement:
+        let declared = try manifest.dependency_at(i)
+        if declared.package != signed.package or declared.requirement != signed.requirement:
             error(invalid, "release manifest dependencies do not match signed metadata")

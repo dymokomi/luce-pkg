@@ -16,6 +16,7 @@ pub type Resolution = resolve.Resolution
 pub type Release = release.Release
 pub type Dependency = release.Dependency
 pub type Versions = version_catalog.Versions
+pub type Manifest = manifest.Manifest
 pub let max_release_metadata: usize = release.max_metadata
 pub let max_release_dependencies: usize = release.max_dependencies
 pub let max_graph_packages: usize = resolve.max_graph_packages
@@ -36,6 +37,11 @@ pub func verify_release(metadata: Release, trusted_key: const u8[], signature: c
 
 pub func validate_release_manifest(metadata: Release, text: str) -> !:
     try manifest.validate(metadata, text)
+
+## Returned strings borrow the input manifest; the caller closes the owning
+## canonical dependency array when finished.
+pub func decode_manifest(text: str) -> Manifest!:
+    return try manifest.decode(text)
 
 pub func parse_version(text: str) -> Version!:
     return try semver.parse(text)

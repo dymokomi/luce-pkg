@@ -51,6 +51,12 @@ requirements, missing/extra entries, identity mismatches and legacy LRS1 are
 rejected. The parser is bounded to1MiB and128 dependencies and does not mutate
 the manifest. Server-side Git-tree extraction remains the caller's responsibility.
 
+`pkg.decode_manifest` exposes the same restricted compiler-compatible declaration
+to package clients. It returns package identity, language and a lexical owning
+array of `[registry.dependencies]` entries, so resolution and publication share
+one parser. Returned strings borrow the caller's manifest bytes; call
+`Manifest.close` to release its dependency array.
+
 `pkg.encode_versions` / `pkg.decode_versions` define the canonical LPV1 catalog
 used for registry version discovery: `LPV1`, a u16le count (maximum1024), then
 u8-length canonical numeric semantic versions in strict descending order. Exact
