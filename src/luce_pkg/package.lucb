@@ -27,6 +27,19 @@ pub struct Application:
     ## Empty, or a relative path to the icon (.icns on macOS, .png on Linux).
     pub var icon: str
 
+## Native inputs the compiler builds and links with the package, as in its `[native]`.
+pub struct Native:
+    pub var sources: str[32]
+    pub var source_count: usize
+    pub var link_search: str[16]
+    pub var link_search_count: usize
+    pub var libraries: str[32]
+    pub var library_count: usize
+    pub var frameworks: str[32]
+    pub var framework_count: usize
+    pub var pkg_config: str[16]
+    pub var pkg_config_count: usize
+
 pub struct Export:
     pub var name: str
     pub var module: str
@@ -55,6 +68,7 @@ pub struct Definition:
     pub var entry: str
     ## Empty, or the post-compile install script of an application.
     pub var install: str
+    pub var native: Native
     ## `application.name` is empty when the package declares no desktop bundle.
     pub var application: Application
     pub var dependency_count: usize
@@ -117,6 +131,14 @@ func identifier_valid(value: str) -> bool:
         labels += 1
         start = end + 1
     return labels >= 2
+
+## A library, framework or pkg-config name: never a path or an option.
+func token_valid(value: str) -> bool:
+    if value.length == 0 or value.length > 128 or value.bytes[0] == '-': return false
+    for byte in value.bytes:
+        let alnum = (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9')
+        if not alnum and byte != '_' and byte != '-' and byte != '.' and byte != '+': return false
+    return true
 
 ## Dotted module name such as `luce_ui.ui`.
 func module_valid(value: str) -> bool:
@@ -218,6 +240,7 @@ pub func decode(text: const u8[]) -> Definition!:
     defer free(declared) in memory.heap
     var root = ""
     var seen_application = false
+    var seen_native = false
 
     for index in 0..<doc.element_count():
         let path = try doc.path_at(index)
@@ -276,6 +299,27 @@ pub func decode(text: const u8[]) -> Definition!:
             if not display_valid(result.application.name): error(invalid, "application name is missing or not a plain display name")
             if not identifier_valid(result.application.identifier): error(invalid, "application identifier must be reverse-DNS, such as com.example.app")
             if result.application.icon.length > 0 and not path_valid(result.application.icon): error(invalid, "invalid application icon path")
+        elif depth == 2 and kind == "native":
+            if seen_native: error(invalid, "a package declares at most one native element")
+            seen_native = true
+            for i in 0..<try doc.property_count(path):
+                let key = try doc.property_name(path, i)
+                if key == "sources": try arena.list(doc, path, key, result.native.sources[0..], &result.native.source_count)
+                elif key == "link_search": try arena.list(doc, path, key, result.native.link_search[0..], &result.native.link_search_count)
+                elif key == "libraries": try arena.list(doc, path, key, result.native.libraries[0..], &result.native.library_count)
+                elif key == "frameworks": try arena.list(doc, path, key, result.native.frameworks[0..], &result.native.framework_count)
+                elif key == "pkg_config": try arena.list(doc, path, key, result.native.pkg_config[0..], &result.native.pkg_config_count)
+                else: error(invalid, "unknown native property")
+            for i in 0..<result.native.source_count:
+                if not path_valid(result.native.sources[i]): error(invalid, "invalid native source path")
+            for i in 0..<result.native.link_search_count:
+                if not path_valid(result.native.link_search[i]): error(invalid, "invalid native link search path")
+            for i in 0..<result.native.library_count:
+                if not token_valid(result.native.libraries[i]): error(invalid, "invalid native library name")
+            for i in 0..<result.native.framework_count:
+                if not token_valid(result.native.frameworks[i]): error(invalid, "invalid native framework name")
+            for i in 0..<result.native.pkg_config_count:
+                if not token_valid(result.native.pkg_config[i]): error(invalid, "invalid pkg-config name")
         elif depth == 2 and kind == "export":
             if result.export_count >= max_exports: error(invalid, "too many package exports")
             if not module_valid(name) : error(invalid, "invalid export name")

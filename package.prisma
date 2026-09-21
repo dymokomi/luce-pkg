@@ -1,20 +1,22 @@
 #prisma 4.0
-def package "luce_pkg" {
+def package "luce-pkg" {
     str owner = "dymokomi"
     str version = "0.1.0"
     str language = "luce-base"
-    str description = "Package definitions, versions, dependency resolution and locks for Luce"
+    str description = "Native Luce Base package identity, dependency resolution and luc.lock handling. MIT OR Apache-2.0. Compilers still read luce.toml; this package owns the lockfile. No foreign solver."
     str readme = "README.md"
 
     def export "pkg" {
         str module = "luce_pkg.pkg"
     }
-    def dependency "luce_crypto" {
+
+    def dependency "luce-crypto" {
         str owner = "dymokomi"
         str version = "^0.1.0"
         str path = "../luce-crypto"
     }
-    def dependency "luce_prism" {
+
+    def dependency "luce-prism" {
         str owner = "dymokomi"
         str version = "^0.1.0"
         str path = "../luce-prism"

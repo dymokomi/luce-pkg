@@ -70,6 +70,9 @@ Children of the root:
   bundle opens as an application instead of in a terminal. `luc install` installs
   the bundle, links the command into `~/.luce/bin`, and on macOS links the bundle
   into `~/Applications`.
+- `def native "<any-name>"`, at most one: C inputs built and linked with the package,
+  as `str[]` properties `sources` and `link_search` (relative paths), and `libraries`,
+  `frameworks` and `pkg_config` (plain names, never options).
 - `def export "<import-name>"` with `module`: a public module, as in the
   compiler's `[exports]`.
 - `def task "<name>"` with `cmd`, optional `description` and optional
