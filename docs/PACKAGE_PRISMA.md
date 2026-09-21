@@ -68,20 +68,41 @@ is at most 64 KiB with at most 128 dependencies.
 
 ## Install scripts
 
-`luc install owner/name` fetches and builds the application, places the build
-output and the package files in a scratch directory, and runs the script with
+`luc install owner/name[@version]` downloads the release, checks its SHA-256,
+builds it, and installs it under `~/.luce/apps/<name>/<version>/`.
+
+An application may name an `install` script. It is high-level Luce run with
 
 ```text
-luce run --sandbox <scratch> install.luc
+luce run --sandbox <package-root> install.luc -- <os> <arch> <name> <version>
 ```
 
-The script is interpreted high-level Luce, confined to the scratch directory with
-no network and no child processes. It arranges the files to install under
-`<scratch>/out/`. `luc` then copies `out/` to `~/.luce/apps/<name>/<version>/`
-and links the executable into `~/.luce/bin`. The script never touches the real
-filesystem. An application without `install` gets the default: the built
-executable alone. `luc uninstall` removes that directory and the link; it runs no
-package code.
+In the sandbox a script has no file, network or process access and cannot import
+Luce Base, so it cannot install anything itself. It prints a plan, one
+instruction a line, and `luc` carries it out:
+
+```text
+copy <path-in-package> <path-in-install-directory>
+link <command-name> <path-in-install-directory>
+```
+
+```luce
+pub func main(arguments: list[str]) -> int!:
+    let name = arguments[2]
+    print(f"copy build/{name} bin/{name}")
+    print("copy themes share/themes")
+    print(f"link {name} bin/{name}")
+    return 0
+```
+
+`copy` takes a file or a whole directory; the built executable is
+`build/<name>`. Both paths must be relative with no `.` or `..` segment, a path
+may be written once, and symlinks and special files are refused. `link` exposes a
+copied file as `~/.luce/bin/<command-name>`. Any other line is an error. Without
+a script the plan is the executable as `bin/<name>`, linked as `<name>`.
+
+`luc list` shows installed applications. `luc uninstall <name>` removes the
+application's directory and the links that point into it; it runs no package code.
 
 ## Releases and locks
 
