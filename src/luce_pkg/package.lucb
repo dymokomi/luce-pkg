@@ -18,6 +18,15 @@ pub struct Requirement:
     ## Empty, or a local checkout used instead of the registry release.
     pub var path: str
 
+## How an application is bundled for the desktop: Name.app on macOS, an AppDir with a
+## .desktop entry on Linux. `name` is the display name.
+pub struct Application:
+    pub var name: str
+    ## Reverse-DNS identifier such as com.luciaos.luced.
+    pub var identifier: str
+    ## Empty, or a relative path to the icon (.icns on macOS, .png on Linux).
+    pub var icon: str
+
 pub struct Export:
     pub var name: str
     pub var module: str
@@ -46,12 +55,17 @@ pub struct Definition:
     pub var entry: str
     ## Empty, or the post-compile install script of an application.
     pub var install: str
+    ## `application.name` is empty when the package declares no desktop bundle.
+    pub var application: Application
     pub var dependency_count: usize
     pub var export_count: usize
     pub var task_count: usize
 
     pub func is_application() -> bool:
         return self.entry.length > 0
+
+    pub func is_bundled() -> bool:
+        return self.application.name.length > 0
 
     ## Borrowed dependency in lexical name order.
     pub func dependency_at(index: usize) -> Requirement!:
@@ -80,6 +94,29 @@ func name_valid(value: str) -> bool:
         let alnum = (byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9')
         if not alnum and (i == 0 or (byte != '_' and byte != '-')): return false
     return true
+
+## Display names become directory names, so they stay plain: letters, digits, spaces, `-`, `_`, `.`.
+func display_valid(value: str) -> bool:
+    if value.length == 0 or value.length > 64 or value.bytes[0] == ' ' or value.bytes[0] == '.' or value.bytes[value.length - 1] == ' ': return false
+    for byte in value.bytes:
+        let alnum = (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9')
+        if not alnum and byte != ' ' and byte != '-' and byte != '_' and byte != '.': return false
+    return true
+
+## Reverse-DNS: at least two dot-separated labels of letters, digits and hyphens.
+func identifier_valid(value: str) -> bool:
+    if value.length == 0 or value.length > 128: return false
+    var labels: usize
+    var start: usize
+    for end in 0..<value.length + 1:
+        if end != value.length and value.bytes[end] != '.': continue
+        if end == start: return false
+        for byte in value.bytes[start..<end]:
+            let alnum = (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9')
+            if not alnum and byte != '-': return false
+        labels += 1
+        start = end + 1
+    return labels >= 2
 
 ## Dotted module name such as `luce_ui.ui`.
 func module_valid(value: str) -> bool:
@@ -180,6 +217,7 @@ pub func decode(text: const u8[]) -> Definition!:
     var declared = try alloc Task[max_tasks] in memory.heap
     defer free(declared) in memory.heap
     var root = ""
+    var seen_application = false
 
     for index in 0..<doc.element_count():
         let path = try doc.path_at(index)
@@ -226,6 +264,18 @@ pub func decode(text: const u8[]) -> Definition!:
                 if found[i].name == entry.name: error(invalid, "duplicate package dependency")
             found[result.dependency_count] = entry
             result.dependency_count += 1
+        elif depth == 2 and kind == "application":
+            if seen_application: error(invalid, "a package declares at most one application")
+            seen_application = true
+            for i in 0..<try doc.property_count(path):
+                let key = try doc.property_name(path, i)
+                if key == "name": result.application.name = try arena.text(doc, path, key)
+                elif key == "identifier": result.application.identifier = try arena.text(doc, path, key)
+                elif key == "icon": result.application.icon = try arena.text(doc, path, key)
+                else: error(invalid, "unknown application property")
+            if not display_valid(result.application.name): error(invalid, "application name is missing or not a plain display name")
+            if not identifier_valid(result.application.identifier): error(invalid, "application identifier must be reverse-DNS, such as com.example.app")
+            if result.application.icon.length > 0 and not path_valid(result.application.icon): error(invalid, "invalid application icon path")
         elif depth == 2 and kind == "export":
             if result.export_count >= max_exports: error(invalid, "too many package exports")
             if not module_valid(name) : error(invalid, "invalid export name")
@@ -263,6 +313,7 @@ pub func decode(text: const u8[]) -> Definition!:
     if not line_valid(result.description): error(invalid, "package description must be one line of at most 256 bytes")
     if result.readme.length > 0 and not path_valid(result.readme): error(invalid, "invalid package readme path")
     if result.entry.length > 0 and not path_valid(result.entry): error(invalid, "invalid package entry path")
+    if result.application.name.length > 0 and result.entry.length == 0: error(invalid, "only a package with an entry may declare an application")
     if result.install.length > 0:
         if result.entry.length == 0: error(invalid, "only an application may declare an install script")
         if not path_valid(result.install): error(invalid, "invalid package install path")

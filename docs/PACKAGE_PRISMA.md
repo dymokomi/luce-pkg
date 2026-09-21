@@ -21,6 +21,11 @@ def package "luced" {
         str version = "^0.4.0"
         str path = "../luce-ui"
     }
+    def application "bundle" {
+        str name = "Luced"
+        str identifier = "com.luciaos.luced"
+        str icon = "assets/luced.icns"
+    }
     def export "editor" {
         str module = "luced.editor"
     }
@@ -56,6 +61,15 @@ Children of the root:
   or an exact version) are required; the registry coordinate is `<owner>/<name>`.
   Optional `path` points at a local checkout that is used instead of the registry
   release, for working across repositories.
+- `def application "<any-name>"`, at most one and only with `entry`: how the program
+  is bundled for the desktop. `name` is the display name (letters, digits, spaces,
+  `-`, `_`, `.`), `identifier` is reverse-DNS, and optional `icon` is a relative path
+  (`.icns` on macOS, `.png` on Linux). `luc build` then also produces
+  `build/<name>.app` on macOS, with `Info.plist`, the executable and the icon, or
+  `build/<name>.AppDir` on Linux, with `AppRun`, a `.desktop` entry and the icon. A
+  bundle opens as an application instead of in a terminal. `luc install` installs
+  the bundle, links the command into `~/.luce/bin`, and on macOS links the bundle
+  into `~/Applications`.
 - `def export "<import-name>"` with `module`: a public module, as in the
   compiler's `[exports]`.
 - `def task "<name>"` with `cmd`, optional `description` and optional
@@ -82,21 +96,22 @@ Luce Base, so it cannot install anything itself. It prints a plan, one
 instruction a line, and `luc` carries it out:
 
 ```text
-copy <path-in-package> <path-in-install-directory>
-link <command-name> <path-in-install-directory>
+copy <path-in-package> -> <path-in-install-directory>
+link <command-name> -> <path-in-install-directory>
 ```
 
 ```luce
 pub func main(arguments: list[str]) -> int!:
     let name = arguments[2]
-    print(f"copy build/{name} bin/{name}")
-    print("copy themes share/themes")
-    print(f"link {name} bin/{name}")
+    print(f"copy build/{name} -> bin/{name}")
+    print("copy themes -> share/themes")
+    print(f"link {name} -> bin/{name}")
     return 0
 ```
 
 `copy` takes a file or a whole directory; the built executable is
-`build/<name>`. Both paths must be relative with no `.` or `..` segment, a path
+`build/<name>` and a declared application's bundle is `build/<display name>.app`
+(or `.AppDir`). Paths may contain spaces; only ` -> ` separates them. Both paths must be relative with no `.` or `..` segment, a path
 may be written once, and symlinks and special files are refused. `link` exposes a
 copied file as `~/.luce/bin/<command-name>`. Any other line is an error. Without
 a script the plan is the executable as `bin/<name>`, linked as `<name>`.

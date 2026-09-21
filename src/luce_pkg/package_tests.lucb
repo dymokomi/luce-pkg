@@ -1,7 +1,7 @@
 import luce_pkg.package as package
 from luce_pkg.semver import invalid
 
-let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def export \"editor\" {\n        str module = \"luced.editor\"\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
+let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def export \"editor\" {\n        str module = \"luced.editor\"\n    }\n    def application \"bundle\" {\n        str name = \"Luced Editor\"\n        str identifier = \"com.luciaos.luced\"\n        str icon = \"assets/luced.icns\"\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
 
 func rejected(text: str) -> bool:
     var value = package.decode(text.bytes) catch failure:
@@ -30,7 +30,8 @@ pub func main(arguments: str[]) -> i32!:
     let second = try value.dependency_at(1)
     assert(first.name == "luce-json" and first.owner == "dymokomi" and first.version == "1.2.0" and first.path == "")
     assert(second.name == "luce_ui" and second.version == "^0.4.0" and second.path == "../luce-ui")
-    assert(value.export_count == 1 and value.task_count == 2)
+    assert(value.export_count == 1 and value.task_count == 2 and value.is_bundled())
+    assert(value.application.name == "Luced Editor" and value.application.identifier == "com.luciaos.luced" and value.application.icon == "assets/luced.icns")
     let exported = try value.export_at(0)
     assert(exported.name == "editor" and exported.module == "luced.editor")
     let ci = try value.task_at(0)
@@ -58,6 +59,9 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected(try library("    str description = \"two\\nlines\"\n", buffer)))
     assert(rejected(try library("    def export \"x\" {\n        str module = \"not a module\"\n    }\n", buffer)))
     assert(rejected(try library("    def task \"t\" {\n        str description = \"nothing to do\"\n    }\n", buffer)))
+    assert(rejected(try library("    def application \"bundle\" {\n        str name = \"Demo\"\n        str identifier = \"com.example.demo\"\n    }\n", buffer)))
+    assert(rejected(try library("    str entry = \"src/main.lucb\"\n    def application \"bundle\" {\n        str name = \"Demo\"\n        str identifier = \"notreversedns\"\n    }\n", buffer)))
+    assert(rejected(try library("    str entry = \"src/main.lucb\"\n    def application \"bundle\" {\n        str name = \"../Escape\"\n        str identifier = \"com.example.demo\"\n    }\n", buffer)))
     assert(rejected(try library("    def widget \"x\" {\n    }\n", buffer)))
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"Not Valid\"\n        str version = \"1.0.0\"\n    }\n", buffer)))
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n        str version = \">=1\"\n    }\n", buffer)))
