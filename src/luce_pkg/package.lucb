@@ -1,0 +1,280 @@
+## Authored package definition in package.prisma; see docs/PACKAGE_PRISMA.md.
+## Decoding uses Prism's own reader. Unknown elements and properties are errors.
+import memory
+import prism
+from luce_pkg.semver import parse, invalid
+
+pub let max_size: usize = 65536
+pub let max_dependencies: usize = 128
+pub let max_exports: usize = 64
+pub let max_tasks: usize = 64
+pub let max_task_depends: usize = 16
+
+## `name` is the dependency's package name and the compiler's dependency key.
+pub struct Requirement:
+    pub var name: str
+    pub var owner: str
+    pub var version: str
+    ## Empty, or a local checkout used instead of the registry release.
+    pub var path: str
+
+pub struct Export:
+    pub var name: str
+    pub var module: str
+
+pub struct Task:
+    pub var name: str
+    pub var command: str
+    pub var description: str
+    pub var depends: str[16]
+    pub var depend_count: usize
+
+## Decoded definition. Strings borrow `storage`; callers close it once.
+pub struct Definition:
+    var storage: u8[]
+    var dependencies: Requirement[]
+    var exports: Export[]
+    var tasks: Task[]
+    pub var name: str
+    pub var owner: str
+    pub var version: str
+    pub var language: str
+    pub var source: str
+    pub var description: str
+    pub var readme: str
+    ## Empty for a library; the program entry path for an application.
+    pub var entry: str
+    ## Empty, or the post-compile install script of an application.
+    pub var install: str
+    pub var dependency_count: usize
+    pub var export_count: usize
+    pub var task_count: usize
+
+    pub func is_application() -> bool:
+        return self.entry.length > 0
+
+    ## Borrowed dependency in lexical name order.
+    pub func dependency_at(index: usize) -> Requirement!:
+        if index >= self.dependency_count: error(invalid, "package dependency index out of bounds")
+        return self.dependencies[index]
+
+    pub func export_at(index: usize) -> Export!:
+        if index >= self.export_count: error(invalid, "package export index out of bounds")
+        return self.exports[index]
+
+    pub func task_at(index: usize) -> Task!:
+        if index >= self.task_count: error(invalid, "package task index out of bounds")
+        return self.tasks[index]
+
+    pub mutating func close():
+        if self.dependencies.length > 0: free(self.dependencies) in memory.heap
+        if self.exports.length > 0: free(self.exports) in memory.heap
+        if self.tasks.length > 0: free(self.tasks) in memory.heap
+        if self.storage.length > 0: free(self.storage) in memory.heap
+        self = Definition()
+
+func name_valid(value: str) -> bool:
+    if value.length == 0 or value.length > 64: return false
+    for i in 0..<value.length:
+        let byte = value.bytes[i]
+        let alnum = (byte >= 'a' and byte <= 'z') or (byte >= '0' and byte <= '9')
+        if not alnum and (i == 0 or (byte != '_' and byte != '-')): return false
+    return true
+
+## Dotted module name such as `luce_ui.ui`.
+func module_valid(value: str) -> bool:
+    if value.length == 0 or value.length > 256: return false
+    var start: usize
+    for end in 0..<value.length + 1:
+        if end != value.length and value.bytes[end] != '.': continue
+        if end == start: return false
+        for byte in value.bytes[start..<end]:
+            let alnum = (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9')
+            if not alnum and byte != '_': return false
+        start = end + 1
+    return true
+
+## Relative, `/`-separated, no empty, `.` or `..` segment, backslash, colon or control byte.
+func path_valid(value: str) -> bool:
+    if value.length == 0 or value.length > 1024: return false
+    var start: usize
+    for end in 0..<value.length + 1:
+        if end != value.length:
+            let byte = value.bytes[end]
+            if byte < 0x20 or byte == 0x7f or byte == '\\' or byte == ':': return false
+            if byte != '/': continue
+        let part = (str)value.bytes[start..<end]
+        if part.length == 0 or part == "." or part == "..": return false
+        start = end + 1
+    return true
+
+## A dependency checkout may sit outside the package, so `..` is allowed here.
+func local_path_valid(value: str) -> bool:
+    if value.length == 0 or value.length > 1024: return false
+    for byte in value.bytes:
+        if byte < 0x20 or byte == 0x7f or byte == '\\': return false
+    return true
+
+func requirement_valid(value: str) -> bool:
+    let exact = (str)value.bytes[1..] if value.length > 1 and value.bytes[0] == '^' else value
+    discard(parse(exact) catch: return false)
+    return true
+
+func line_valid(value: str) -> bool:
+    if value.length > 256: return false
+    for byte in value.bytes:
+        if byte < 0x20 or byte == 0x7f: return false
+    return true
+
+## Copies decoded text into the arena owned by the Definition.
+struct Arena:
+    var bytes: u8[]
+    var used: usize
+
+    mutating func copy(text: str) -> str!:
+        if self.used + text.length > self.bytes.length: error(invalid, "package definition exceeds its bound")
+        let start = self.used
+        for i in 0..<text.length: self.bytes[start + i] = text.bytes[i]
+        self.used += text.length
+        return (str)self.bytes[start..<self.used]
+
+    mutating func text(doc: prism.Document*, path: str, name: str) -> str!:
+        let value = try doc.get(path, name)
+        defer value.release()
+        if value.value().dtype() != prism.DType.string or value.value().rank() != 0:
+            error(invalid, "package property must be a single str")
+        return try self.copy(try value.value().text_at())
+
+    mutating func list(doc: prism.Document*, path: str, name: str, output: str[], count: usize*) -> !:
+        let value = try doc.get(path, name)
+        defer value.release()
+        if value.value().dtype() != prism.DType.string or value.value().rank() != 1:
+            error(invalid, "package property must be a str array")
+        if value.value().count() > output.length: error(invalid, "package str array is too long")
+        for i in 0..<value.value().count():
+            output[i] = try self.copy(try value.value().text_at(i))
+        *count = value.value().count()
+
+func sort(values: Requirement[], count: usize):
+    for i in 1..<count:
+        let current = values[i]
+        var at = i
+        while at > 0 and values[at - 1].name > current.name:
+            values[at] = values[at - 1]
+            at -= 1
+        values[at] = current
+
+pub func decode(text: const u8[]) -> Definition!:
+    if text.length == 0 or text.length > max_size: error(invalid, "package definition size outside bounds")
+    let reference = prism.Document.decode(text) catch: error(invalid, "package.prisma is not valid Prism text")
+    defer reference.release()
+    let doc = reference.value()
+    if doc.connection_count() != 0: error(invalid, "package.prisma may not contain connections")
+
+    var result: Definition
+    errdefer result.close()
+    result.storage = try alloc u8[text.length] in memory.heap
+    var arena = Arena(bytes = result.storage)
+    var found: Requirement[128]
+    var exported: Export[64]
+    var declared = try alloc Task[max_tasks] in memory.heap
+    defer free(declared) in memory.heap
+    var root = ""
+
+    for index in 0..<doc.element_count():
+        let path = try doc.path_at(index)
+        let kind = try doc.type_at(path)
+        var depth: usize
+        var last: usize
+        for i in 0..<path.length:
+            if path.bytes[i] == '/':
+                depth += 1
+                last = i
+        let name = (str)path.bytes[last + 1..]
+        if depth == 1:
+            if kind != "package" or root.length > 0: error(invalid, "package.prisma needs exactly one root package element")
+            if not name_valid(name): error(invalid, "invalid package name")
+            root = path
+            for i in 0..<try doc.property_count(path):
+                let key = try doc.property_name(path, i)
+                let value = try arena.text(doc, path, key)
+                if key == "owner": result.owner = value
+                elif key == "version": result.version = value
+                elif key == "language": result.language = value
+                elif key == "source": result.source = value
+                elif key == "description": result.description = value
+                elif key == "readme": result.readme = value
+                elif key == "entry": result.entry = value
+                elif key == "install": result.install = value
+                else: error(invalid, "unknown package property")
+            result.name = try arena.copy(name)
+        elif depth == 2 and kind == "dependency":
+            if result.dependency_count >= max_dependencies: error(invalid, "too many package dependencies")
+            if not name_valid(name): error(invalid, "invalid dependency name")
+            var entry = Requirement(name = try arena.copy(name))
+            for i in 0..<try doc.property_count(path):
+                let key = try doc.property_name(path, i)
+                let value = try arena.text(doc, path, key)
+                if key == "owner": entry.owner = value
+                elif key == "version": entry.version = value
+                elif key == "path": entry.path = value
+                else: error(invalid, "unknown dependency property")
+            if not name_valid(entry.owner): error(invalid, "dependency owner is missing or invalid")
+            if not requirement_valid(entry.version): error(invalid, "dependency version is missing or invalid")
+            if entry.path.length > 0 and not local_path_valid(entry.path): error(invalid, "invalid dependency path")
+            for i in 0..<result.dependency_count:
+                if found[i].name == entry.name: error(invalid, "duplicate package dependency")
+            found[result.dependency_count] = entry
+            result.dependency_count += 1
+        elif depth == 2 and kind == "export":
+            if result.export_count >= max_exports: error(invalid, "too many package exports")
+            if not module_valid(name) : error(invalid, "invalid export name")
+            var entry = Export(name = try arena.copy(name))
+            for i in 0..<try doc.property_count(path):
+                let key = try doc.property_name(path, i)
+                if key != "module": error(invalid, "unknown export property")
+                entry.module = try arena.text(doc, path, key)
+            if not module_valid(entry.module): error(invalid, "export module is missing or invalid")
+            exported[result.export_count] = entry
+            result.export_count += 1
+        elif depth == 2 and kind == "task":
+            if result.task_count >= max_tasks: error(invalid, "too many package tasks")
+            if not name_valid(name): error(invalid, "invalid task name")
+            var entry = Task(name = try arena.copy(name))
+            for i in 0..<try doc.property_count(path):
+                let key = try doc.property_name(path, i)
+                if key == "cmd": entry.command = try arena.text(doc, path, key)
+                elif key == "description": entry.description = try arena.text(doc, path, key)
+                elif key == "depends": try arena.list(doc, path, key, entry.depends[0..], &entry.depend_count)
+                else: error(invalid, "unknown task property")
+            if entry.command.length == 0 and entry.depend_count == 0: error(invalid, "task needs a cmd or depends")
+            if not line_valid(entry.description): error(invalid, "task description must be one line")
+            declared[result.task_count] = entry
+            result.task_count += 1
+        else:
+            error(invalid, "unknown element in package.prisma")
+
+    if root.length == 0: error(invalid, "package.prisma needs exactly one root package element")
+    if not name_valid(result.owner): error(invalid, "package owner is missing or invalid")
+    discard(parse(result.version) catch: error(invalid, "package version is missing or invalid"))
+    if result.language != "luce" and result.language != "luce-base": error(invalid, "package language must be luce or luce-base")
+    if result.source.length == 0: result.source = "src"
+    if not path_valid(result.source): error(invalid, "invalid package source path")
+    if not line_valid(result.description): error(invalid, "package description must be one line of at most 256 bytes")
+    if result.readme.length > 0 and not path_valid(result.readme): error(invalid, "invalid package readme path")
+    if result.entry.length > 0 and not path_valid(result.entry): error(invalid, "invalid package entry path")
+    if result.install.length > 0:
+        if result.entry.length == 0: error(invalid, "only an application may declare an install script")
+        if not path_valid(result.install): error(invalid, "invalid package install path")
+
+    sort(found, result.dependency_count)
+    if result.dependency_count > 0:
+        result.dependencies = try alloc Requirement[result.dependency_count] in memory.heap
+        for i in 0..<result.dependency_count: result.dependencies[i] = found[i]
+    if result.export_count > 0:
+        result.exports = try alloc Export[result.export_count] in memory.heap
+        for i in 0..<result.export_count: result.exports[i] = exported[i]
+    if result.task_count > 0:
+        result.tasks = try alloc Task[result.task_count] in memory.heap
+        for i in 0..<result.task_count: result.tasks[i] = declared[i]
+    return result

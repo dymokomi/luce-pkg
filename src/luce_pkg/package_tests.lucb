@@ -1,0 +1,70 @@
+import luce_pkg.package as package
+from luce_pkg.semver import invalid
+
+let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def export \"editor\" {\n        str module = \"luced.editor\"\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
+
+func rejected(text: str) -> bool:
+    var value = package.decode(text.bytes) catch failure:
+        assert(failure.code == invalid)
+        return true
+    value.close()
+    return false
+
+func out_of_bounds(value: package.Definition*) -> bool:
+    discard(value.dependency_at(2) catch failure:
+        assert(failure.code == invalid)
+        return true)
+    return false
+
+func library(body: str, buffer: u8[]) -> str!:
+    return try format(buffer, f"#prisma 4.0\ndef package \"demo\" {{\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce-base\"\n{body}}}\n")
+
+pub func main(arguments: str[]) -> i32!:
+    discard(arguments)
+    var value = try package.decode(sample.bytes)
+    assert(value.name == "luced" and value.owner == "dymokomi" and value.version == "0.3.0")
+    assert(value.language == "luce" and value.source == "src" and value.is_application())
+    assert(value.entry == "src/main.luc" and value.install == "install.luc" and value.readme == "README.md")
+    assert(value.description == "A text editor written in Luce" and value.dependency_count == 2)
+    let first = try value.dependency_at(0)
+    let second = try value.dependency_at(1)
+    assert(first.name == "luce-json" and first.owner == "dymokomi" and first.version == "1.2.0" and first.path == "")
+    assert(second.name == "luce_ui" and second.version == "^0.4.0" and second.path == "../luce-ui")
+    assert(value.export_count == 1 and value.task_count == 2)
+    let exported = try value.export_at(0)
+    assert(exported.name == "editor" and exported.module == "luced.editor")
+    let ci = try value.task_at(0)
+    assert(ci.name == "ci" and ci.command == "" and ci.depend_count == 2 and ci.depends[1] == "unit")
+    let tests = try value.task_at(1)
+    assert(tests.command == "luc test" and tests.depend_count == 0)
+    assert(out_of_bounds(&value))
+    value.close()
+    assert(value.dependency_count == 0 and value.name == "")
+
+    var buffer: u8[2048]
+    var plain = try package.decode((try library("", buffer)).bytes)
+    assert(plain.name == "demo" and not plain.is_application() and plain.dependency_count == 0)
+    plain.close()
+
+    assert(rejected(""))
+    assert(rejected("not prism"))
+    assert(rejected("#prisma 4.0\n"))
+    assert(rejected(try library("    str licence = \"MIT\"\n", buffer)))
+    assert(rejected(try library("    int32 source = 3\n", buffer)))
+    assert(rejected(try library("    str install = \"install.luc\"\n", buffer)))
+    assert(rejected(try library("    str entry = \"../main.luc\"\n", buffer)))
+    assert(rejected(try library("    str entry = \"/abs/main.luc\"\n", buffer)))
+    assert(rejected(try library("    str entry = \"src\\\\main.luc\"\n", buffer)))
+    assert(rejected(try library("    str description = \"two\\nlines\"\n", buffer)))
+    assert(rejected(try library("    def export \"x\" {\n        str module = \"not a module\"\n    }\n", buffer)))
+    assert(rejected(try library("    def task \"t\" {\n        str description = \"nothing to do\"\n    }\n", buffer)))
+    assert(rejected(try library("    def widget \"x\" {\n    }\n", buffer)))
+    assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"Not Valid\"\n        str version = \"1.0.0\"\n    }\n", buffer)))
+    assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n        str version = \">=1\"\n    }\n", buffer)))
+    assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n        str version = \"1.0.0\"\n        str git = \"x\"\n    }\n", buffer)))
+    assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n    }\n", buffer)))
+    assert(rejected("#prisma 4.0\ndef package \"a\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce\"\n}\ndef package \"b\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce\"\n}\n"))
+    assert(rejected("#prisma 4.0\ndef package \"demo\" {\n    str owner = \"acme\"\n    str version = \"1.0\"\n    str language = \"luce\"\n}\n"))
+    assert(rejected("#prisma 4.0\ndef package \"demo\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"rust\"\n}\n"))
+    print("PASS package.prisma definition cases")
+    return 0

@@ -23,8 +23,8 @@ def main():
             ("Linux", "x86_64"): "x86_64-linux"}.get((platform.system(), platform.machine()))
     if not host:
         raise SystemExit("Use explicit compiler paths on this platform.")
-    crypto = ROOT.parent / "luce-crypto"
-    for source, pin in ((base, "BASE"), (luce, "LUCE"), (crypto, "CRYPTO")):
+    crypto, prism, tls = (ROOT.parent / name for name in ("luce-crypto", "luce-prism", "luce-tls"))
+    for source, pin in ((base, "BASE"), (luce, "LUCE"), (crypto, "CRYPTO"), (prism, "PRISM"), (tls, "TLS")):
         expected = (ROOT / "bootstrap" / pin).read_text().strip()
         actual = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
         if subprocess.check_output(["git", "-C", str(source), "status", "--porcelain"]):

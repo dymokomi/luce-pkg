@@ -1,0 +1,22 @@
+#prisma 4.0
+def package "luce_pkg" {
+    str owner = "dymokomi"
+    str version = "0.1.0"
+    str language = "luce-base"
+    str description = "Package definitions, versions, dependency resolution and locks for Luce"
+    str readme = "README.md"
+
+    def export "pkg" {
+        str module = "luce_pkg.pkg"
+    }
+    def dependency "luce_crypto" {
+        str owner = "dymokomi"
+        str version = "^0.1.0"
+        str path = "../luce-crypto"
+    }
+    def dependency "luce_prism" {
+        str owner = "dymokomi"
+        str version = "^0.1.0"
+        str path = "../luce-prism"
+    }
+}

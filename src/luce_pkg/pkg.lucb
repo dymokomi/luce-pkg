@@ -5,6 +5,7 @@ import crypto_native
 import luce_pkg.release as release
 import luce_pkg.catalog as version_catalog
 import luce_pkg.manifest as manifest
+import luce_pkg.package as package
 
 pub let invalid = semver.invalid
 pub type Version = semver.Version
@@ -17,6 +18,7 @@ pub type Release = release.Release
 pub type Dependency = release.Dependency
 pub type Versions = version_catalog.Versions
 pub type Manifest = manifest.Manifest
+pub type Definition = package.Definition
 pub let max_release_metadata: usize = release.max_metadata
 pub let max_release_dependencies: usize = release.max_dependencies
 pub let max_graph_packages: usize = resolve.max_graph_packages
@@ -40,6 +42,10 @@ pub func validate_release_manifest(metadata: Release, text: str) -> !:
 
 ## Returned strings borrow the input manifest; the caller closes the owning
 ## canonical dependency array when finished.
+## Decode an authored package.prisma; see docs/PACKAGE_PRISMA.md.
+pub func decode_package(text: const u8[]) -> Definition!:
+    return try package.decode(text)
+
 pub func decode_manifest(text: str) -> Manifest!:
     return try manifest.decode(text)
 
