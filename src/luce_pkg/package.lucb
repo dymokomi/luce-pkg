@@ -60,6 +60,8 @@ pub struct Definition:
     pub var name: str
     pub var owner: str
     pub var version: str
+    ## `package` (a library), `application` (a desktop program) or `tool` (a terminal program).
+    pub var kind: str
     pub var language: str
     pub var source: str
     pub var description: str
@@ -75,8 +77,15 @@ pub struct Definition:
     pub var export_count: usize
     pub var task_count: usize
 
+    ## True for anything that builds a program: an application or a tool.
     pub func is_application() -> bool:
         return self.entry.length > 0
+
+    pub func is_tool() -> bool:
+        return self.kind == "tool"
+
+    pub func is_package() -> bool:
+        return self.kind == "package"
 
     pub func is_bundled() -> bool:
         return self.application.name.length > 0
@@ -261,6 +270,7 @@ pub func decode(text: const u8[]) -> Definition!:
                 let value = try arena.text(doc, path, key)
                 if key == "owner": result.owner = value
                 elif key == "version": result.version = value
+                elif key == "kind": result.kind = value
                 elif key == "language": result.language = value
                 elif key == "source": result.source = value
                 elif key == "description": result.description = value
@@ -357,7 +367,18 @@ pub func decode(text: const u8[]) -> Definition!:
     if not line_valid(result.description): error(invalid, "package description must be one line of at most 256 bytes")
     if result.readme.length > 0 and not path_valid(result.readme): error(invalid, "invalid package readme path")
     if result.entry.length > 0 and not path_valid(result.entry): error(invalid, "invalid package entry path")
-    if result.application.name.length > 0 and result.entry.length == 0: error(invalid, "only a package with an entry may declare an application")
+    # The kind decides what else the definition must and must not say.
+    if result.kind == "package":
+        if result.entry.length > 0 or result.application.name.length > 0 or result.install.length > 0:
+            error(invalid, "a package is a library: it has no entry, application or install script")
+    elif result.kind == "tool":
+        if result.entry.length == 0: error(invalid, "a tool needs an entry")
+        if result.application.name.length > 0: error(invalid, "a tool runs in a terminal; declare kind application for a desktop program")
+    elif result.kind == "application":
+        if result.entry.length == 0 or result.application.name.length == 0:
+            error(invalid, "an application needs an entry and an application element with its name and identifier")
+    else:
+        error(invalid, "kind must be package, application or tool")
     if result.install.length > 0:
         if result.entry.length == 0: error(invalid, "only an application may declare an install script")
         if not path_valid(result.install): error(invalid, "invalid package install path")

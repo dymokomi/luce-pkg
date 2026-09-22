@@ -10,6 +10,7 @@ Prism text, read with Prism's own decoder. There is no legacy format to support.
 def package "luced" {
     str owner = "dymokomi"
     str version = "0.3.0"
+    str kind = "application"
     str language = "luce"
     str description = "A text editor written in Luce"
     str readme = "README.md"
@@ -47,11 +48,12 @@ One root `def package "<name>"`. The registry coordinate is `<owner>/<name>`.
 | --- | --- | --- |
 | `owner` | yes | Registry account that owns the package. |
 | `version` | yes | Numeric `major.minor.patch`. A release tag `v<version>` must match it. |
+| `kind` | yes | `package` (a library others import), `application` (a desktop program) or `tool` (a terminal program). A package has no `entry`; a tool has an `entry`; an application has an `entry` and an `application` element. |
 | `language` | yes | `luce` or `luce-base`. |
 | `source` | no | Source directory, default `src`. |
 | `description` | no | One line, at most 256 bytes. Shown on the website and in search. |
 | `readme` | no | Relative path to a Markdown file rendered on the package page. |
-| `entry` | no | Relative path to the program entry. Present: the package is an application. Absent: a library. |
+| `entry` | for a tool or application | Relative path to the program entry. |
 | `install` | no | Relative path to a post-compile install script. Only valid with `entry`. |
 
 Children of the root:

@@ -1,7 +1,7 @@
 import luce_pkg.package as package
 from luce_pkg.semver import invalid
 
-let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def export \"editor\" {\n        str module = \"luced.editor\"\n    }\n    def application \"bundle\" {\n        str name = \"Luced Editor\"\n        str identifier = \"com.luciaos.luced\"\n        str icon = \"assets/luced.icns\"\n    }\n    def native \"inputs\" {\n        str[] sources = [\"native/a.c\", \"native/b.c\"]\n        str[] frameworks = [\"AppKit\"]\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
+let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str kind = \"application\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def export \"editor\" {\n        str module = \"luced.editor\"\n    }\n    def application \"bundle\" {\n        str name = \"Luced Editor\"\n        str identifier = \"com.luciaos.luced\"\n        str icon = \"assets/luced.icns\"\n    }\n    def native \"inputs\" {\n        str[] sources = [\"native/a.c\", \"native/b.c\"]\n        str[] frameworks = [\"AppKit\"]\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
 
 func rejected(text: str) -> bool:
     var value = package.decode(text.bytes) catch failure:
@@ -17,13 +17,13 @@ func out_of_bounds(value: package.Definition*) -> bool:
     return false
 
 func library(body: str, buffer: u8[]) -> str!:
-    return try format(buffer, f"#prisma 4.0\ndef package \"demo\" {{\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce-base\"\n{body}}}\n")
+    return try format(buffer, f"#prisma 4.0\ndef package \"demo\" {{\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"package\"\n    str language = \"luce-base\"\n{body}}}\n")
 
 pub func main(arguments: str[]) -> i32!:
     discard(arguments)
     var value = try package.decode(sample.bytes)
     assert(value.name == "luced" and value.owner == "dymokomi" and value.version == "0.3.0")
-    assert(value.language == "luce" and value.source == "src" and value.is_application())
+    assert(value.kind == "application" and value.language == "luce" and value.source == "src" and value.is_application() and not value.is_tool())
     assert(value.entry == "src/main.luc" and value.install == "install.luc" and value.readme == "README.md")
     assert(value.description == "A text editor written in Luce" and value.dependency_count == 2)
     let first = try value.dependency_at(0)
@@ -45,7 +45,7 @@ pub func main(arguments: str[]) -> i32!:
 
     var buffer: u8[2048]
     var plain = try package.decode((try library("", buffer)).bytes)
-    assert(plain.name == "demo" and not plain.is_application() and plain.dependency_count == 0)
+    assert(plain.name == "demo" and plain.is_package() and not plain.is_application() and plain.dependency_count == 0)
     plain.close()
 
     assert(rejected(""))
@@ -73,5 +73,14 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected("#prisma 4.0\ndef package \"a\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce\"\n}\ndef package \"b\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce\"\n}\n"))
     assert(rejected("#prisma 4.0\ndef package \"demo\" {\n    str owner = \"acme\"\n    str version = \"1.0\"\n    str language = \"luce\"\n}\n"))
     assert(rejected("#prisma 4.0\ndef package \"demo\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"rust\"\n}\n"))
+    let tool = "#prisma 4.0\ndef package \"grep\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"tool\"\n    str language = \"luce\"\n    str entry = \"src/main.luc\"\n}\n"
+    var command = try package.decode(tool.bytes)
+    assert(command.is_tool() and command.is_application() and not command.is_bundled())
+    command.close()
+    assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce\"\n}\n"))
+    assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"plugin\"\n    str language = \"luce\"\n}\n"))
+    assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"tool\"\n    str language = \"luce\"\n}\n"))
+    assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"application\"\n    str language = \"luce\"\n    str entry = \"src/main.luc\"\n}\n"))
+    assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"tool\"\n    str language = \"luce\"\n    str entry = \"src/main.luc\"\n    def application \"bundle\" {\n        str name = \"X\"\n        str identifier = \"com.example.x\"\n    }\n}\n"))
     print("PASS package.prisma definition cases")
     return 0
