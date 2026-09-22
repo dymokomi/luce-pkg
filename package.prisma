@@ -1,7 +1,7 @@
 #prisma 4.0
 def package "luce-pkg" {
     str owner = "dymokomi"
-    str version = "0.2.0"
+    str version = "0.2.1"
     str kind = "package"
     str language = "luce-base"
     str description = "Decodes package.prisma, the Luce project file, and handles versions and release digests."
