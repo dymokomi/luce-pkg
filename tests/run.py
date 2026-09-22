@@ -9,10 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 MODES = {f"native{i}": ["--native", "--opt", str(i)] for i in range(4)}
 MODES.update({"c": ["--backend=c"], "c-release": ["--backend=c", "--release"]})
 SOURCES = [("src/luce_pkg/pkg_tests.lucb", "pkg-tests"),
-           ("src/luce_pkg/release_tests.lucb", "release-tests"),
-           ("src/luce_pkg/manifest_tests.lucb", "manifest-tests"),
-           ("src/luce_pkg/resolve_tests.lucb", "resolve-tests"),
-           ("src/luce_pkg/lock_v3_tests.lucb", "lock-v3-tests"),
            ("src/luce_pkg/package_tests.lucb", "package-tests")]
 
 

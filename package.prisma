@@ -1,10 +1,10 @@
 #prisma 4.0
 def package "luce-pkg" {
     str owner = "dymokomi"
-    str version = "0.1.1"
+    str version = "0.2.0"
     str kind = "package"
     str language = "luce-base"
-    str description = "Native Luce Base package identity, dependency resolution and luc.lock handling. MIT OR Apache-2.0. Compilers still read luce.toml; this package owns the lockfile. No foreign solver."
+    str description = "Decodes package.prisma, the Luce project file, and handles versions and release digests."
     str readme = "README.md"
 
     def export "pkg" {

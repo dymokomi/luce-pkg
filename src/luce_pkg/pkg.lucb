@@ -1,81 +1,25 @@
+## Package definitions and versions for Luce: the `pkg` export.
 import luce_pkg.semver as semver
-import luce_pkg.lock as lock
-import luce_pkg.resolve as resolve
-import crypto_native
-import luce_pkg.release as release
-import luce_pkg.catalog as version_catalog
-import luce_pkg.manifest as manifest
 import luce_pkg.package as package
+import crypto_native
 
 pub let invalid = semver.invalid
 pub type Version = semver.Version
-pub type Package = lock.Package
-pub type LockedDependency = lock.LockedDependency
-pub type Lock = lock.Lock
-pub type Candidate = resolve.Candidate
-pub type Resolution = resolve.Resolution
-pub type Release = release.Release
-pub type Dependency = release.Dependency
-pub type Versions = version_catalog.Versions
-pub type Manifest = manifest.Manifest
 pub type Definition = package.Definition
-pub let max_release_metadata: usize = release.max_metadata
-pub let max_release_dependencies: usize = release.max_dependencies
-pub let max_graph_packages: usize = resolve.max_graph_packages
-pub let max_graph_candidates: usize = resolve.max_graph_candidates
+pub type Requirement = package.Requirement
+pub type Export = package.Export
+pub type Task = package.Task
+pub type Application = package.Application
+pub type Native = package.Native
 
-pub func encode_release(metadata: Release, output: u8[]) -> usize!:
-    return try release.encode(metadata, output)
-
-pub func encode_release_v2(metadata: Release, package_name: str, dependencies: const Dependency[], count: usize, output: u8[]) -> usize!:
-    return try release.encode_v2(metadata, package_name, dependencies, count, output)
-
-## Returned fields borrow the input metadata bytes.
-pub func decode_release(metadata: const u8[]) -> Release!:
-    return try release.decode(metadata)
-
-pub func verify_release(metadata: Release, trusted_key: const u8[], signature: const u8[], source: const u8[]) -> bool!:
-    return try release.verify(metadata, trusted_key, signature, source)
-
-pub func validate_release_manifest(metadata: Release, text: str) -> !:
-    try manifest.validate(metadata, text)
-
-## Returned strings borrow the input manifest; the caller closes the owning
-## canonical dependency array when finished.
 ## Decode an authored package.prisma; see docs/PACKAGE_PRISMA.md.
 pub func decode_package(text: const u8[]) -> Definition!:
     return try package.decode(text)
 
-pub func decode_manifest(text: str) -> Manifest!:
-    return try manifest.decode(text)
-
+## Numeric major.minor.patch.
 pub func parse_version(text: str) -> Version!:
     return try semver.parse(text)
 
-pub func select_caret(name: str, requirement: str, catalog: const Candidate[], count: usize) -> Version!:
-    return try resolve.select_caret(name, requirement, catalog, count)
-
-pub func resolve_graph(origin: str, roots: const Dependency[], root_count: usize,
-                       releases: const Release[], release_count: usize) -> Resolution!:
-    return try resolve.graph(origin, roots, root_count, releases, release_count)
-
-pub func encode_versions(versions: const str[], count: usize, output: u8[]) -> usize!:
-    return try version_catalog.encode(versions, count, output)
-
-pub func decode_versions(input: const u8[]) -> Versions!:
-    return try version_catalog.decode(input)
-
-pub func select_version(versions: Versions, requirement: str) -> str!:
-    return try version_catalog.select(versions, requirement)
-
-pub func lock_origin(text: str) -> str!:
-    return try lock.origin_of(text)
-
-pub func decode_lock(text: str) -> Lock!:
-    return try lock.decode(text)
-
-pub func encode_lock(origin: str, packages: const Package[], count: usize, out: u8[], schema_version: u8 = 1) -> usize!:
-    return try lock.encode(origin, packages, count, out, schema_version)
-
+## SHA-256 of release bytes, the digest luc.lock records and the registry lists.
 pub func source_digest(input: const u8[], output: u8[]) -> usize!:
     return try crypto_native.digest(input, output, "sha256")

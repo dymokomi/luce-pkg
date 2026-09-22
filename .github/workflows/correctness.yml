@@ -1,4 +1,4 @@
-name: Native package-lock correctness
+name: Correctness
 on:
   push:
   pull_request:
