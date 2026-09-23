@@ -2,6 +2,7 @@
 ## Decoding uses Prism's own reader. Unknown elements and properties are errors.
 import memory
 import prism
+import strings
 from luce_pkg.semver import parse, invalid
 
 pub let max_size: usize = 65536
@@ -163,6 +164,19 @@ func module_valid(value: str) -> bool:
     return true
 
 ## Relative, `/`-separated, no empty, `.` or `..` segment, backslash, colon or control byte.
+## `inputs` or `all` for every target, an operating system (`macos`, `linux`, `windows`,
+## `wasi`) on each of its architectures, or one exact target such as `x86_64-windows`.
+func native_element_valid(name: str) -> bool:
+    let systems = ["macos", "linux", "windows", "wasi"]
+    if name == "inputs" or name == "all": return true
+    for system in systems:
+        if name == system: return true
+    let (machine, system) = strings.split_once(name, "-") else return false
+    if machine != "arm64" and machine != "x86_64" and machine != "wasm32": return false
+    for known in systems:
+        if system == known: return true
+    return false
+
 func path_valid(value: str) -> bool:
     if value.length == 0 or value.length > 1024: return false
     var start: usize
@@ -218,10 +232,10 @@ struct Arena:
         defer value.release()
         if value.value().dtype() != prism.DType.string or value.value().rank() != 1:
             error(invalid, "package property must be a str array")
-        if value.value().count() > output.length: error(invalid, "package str array is too long")
+        if *count + value.value().count() > output.length: error(invalid, "package str array is too long")
         for i in 0..<value.value().count():
-            output[i] = try self.copy(try value.value().text_at(i))
-        *count = value.value().count()
+            output[*count + i] = try self.copy(try value.value().text_at(i))
+        *count += value.value().count()
 
 func sort(values: Requirement[], count: usize):
     for i in 1..<count:
@@ -249,7 +263,6 @@ pub func decode(text: const u8[]) -> Definition!:
     defer free(declared) in memory.heap
     var root = ""
     var seen_application = false
-    var seen_native = false
 
     for index in 0..<doc.element_count():
         let path = try doc.path_at(index)
@@ -310,8 +323,8 @@ pub func decode(text: const u8[]) -> Definition!:
             if not identifier_valid(result.application.identifier): error(invalid, "application identifier must be reverse-DNS, such as com.example.app")
             if result.application.icon.length > 0 and not path_valid(result.application.icon): error(invalid, "invalid application icon path")
         elif depth == 2 and kind == "native":
-            if seen_native: error(invalid, "a package declares at most one native element")
-            seen_native = true
+            # one element per target it applies to, their inputs taken together here
+            if not native_element_valid(name): error(invalid, "a native element is named inputs, all, an operating system or a target")
             for i in 0..<try doc.property_count(path):
                 let key = try doc.property_name(path, i)
                 if key == "sources": try arena.list(doc, path, key, result.native.sources[0..], &result.native.source_count)

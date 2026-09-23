@@ -47,6 +47,12 @@ pub func main(arguments: str[]) -> i32!:
     var plain = try package.decode((try library("", buffer)).bytes)
     assert(plain.name == "demo" and plain.is_package() and not plain.is_application() and plain.dependency_count == 0)
     plain.close()
+    # a native element per target it applies to; their inputs are taken together
+    var targeted = try package.decode((try library("    def native \"macos\" {\n        str[] frameworks = [\"AppKit\"]\n    }\n    def native \"windows\" {\n        str[] libraries = [\"user32\"]\n        str[] link_search = [\"$VULKAN_SDK/Lib\"]\n    }\n    def native \"x86_64-linux\" {\n        str[] libraries = [\"m\"]\n    }\n", buffer)).bytes)
+    assert(targeted.native.framework_count == 1 and targeted.native.library_count == 2 and targeted.native.libraries[1] == "m")
+    targeted.close()
+    assert(rejected(try library("    def native \"beos\" {\n        str[] libraries = [\"m\"]\n    }\n", buffer)))
+    assert(rejected(try library("    def native \"sparc-linux\" {\n        str[] libraries = [\"m\"]\n    }\n", buffer)))
 
     assert(rejected(""))
     assert(rejected("not prism"))
