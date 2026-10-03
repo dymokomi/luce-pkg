@@ -55,6 +55,7 @@ One root `def package "<name>"`. The registry coordinate is `<owner>/<name>`.
 | `readme` | no | Relative path to a Markdown file rendered on the package page. |
 | `entry` | for a tool or application | Relative path to the program entry. |
 | `install` | no | Relative path to a post-compile install script. Only valid with `entry`. |
+| `development` | no | `str[]` of paths, relative to the root, that are only for developing the package: tool scripts, benchmarks, internal docs. `tests` and `dev` are development paths in every package without being listed. |
 
 Children of the root:
 
@@ -84,6 +85,18 @@ Names match `[a-z0-9][a-z0-9_-]{0,63}`. Paths are relative, `/`-separated, and
 contain no empty, `.` or `..` segment, backslash, colon or NUL. Any other element
 kind or property is an error, so a typo is reported rather than ignored. The file
 is at most 64 KiB with at most 128 dependencies.
+
+## Development paths
+
+`luc install` builds a working package or application, not a development checkout. When
+it unpacks a release, for the package being installed and for every dependency, it leaves
+out the development paths: `tests/` and `dev/` in every package, and whatever
+`development` lists. `luc install --dev` installs the package's whole tree. A release
+always contains everything, so a clone or `--dev` install can run the tests.
+
+Keep tests, fixtures and test vectors under `tests/`. What an install builds may not be
+development material: a definition is refused when its `entry`, `install` script, source
+root or any exported module lies in a development path.
 
 ## Install scripts
 

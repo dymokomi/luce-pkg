@@ -10,6 +10,9 @@ pub let max_dependencies: usize = 128
 pub let max_exports: usize = 64
 pub let max_tasks: usize = 64
 pub let max_task_depends: usize = 16
+pub let max_development: usize = 16
+## Development paths every package has: `luc install` leaves these out unless `--dev`.
+pub let default_development: str[2] = ["tests", "dev"]
 
 ## `name` is the dependency's package name and the compiler's dependency key.
 pub struct Requirement:
@@ -77,6 +80,10 @@ pub struct Definition:
     pub var dependency_count: usize
     pub var export_count: usize
     pub var task_count: usize
+    ## Development-only paths the package declares (`str[] development`), relative to its
+    ## root, besides `tests` and `dev`. `luc install` leaves all of them out unless `--dev`.
+    pub var development: str[16]
+    pub var development_count: usize
 
     ## True for anything that builds a program: an application or a tool.
     pub func is_application() -> bool:
@@ -99,6 +106,15 @@ pub struct Definition:
     pub func export_at(index: usize) -> Export!:
         if index >= self.export_count: error(invalid, "package export index out of bounds")
         return self.exports[index]
+
+    ## Whether `path` (relative to the package root, `/`-separated) is development
+    ## material: `tests`, `dev`, a declared development path, or anything inside one.
+    pub func is_development(path: str) -> bool:
+        for prefix in default_development:
+            if under(path, prefix): return true
+        for i in 0..<self.development_count:
+            if under(path, self.development[i]): return true
+        return false
 
     pub func task_at(index: usize) -> Task!:
         if index >= self.task_count: error(invalid, "package task index out of bounds")
@@ -190,6 +206,27 @@ func path_valid(value: str) -> bool:
         start = end + 1
     return true
 
+## Whether exported `module` (`luce_crypto.crypto`) would sit in a development path of
+## `definition`: its file `<source>/luce_crypto/crypto.lucb` or its directory.
+func exports_development(definition: const Definition*, module: str) -> bool:
+    var buffer: u8[1200]
+    if definition.source.length + 1 + module.length + 5 > buffer.length: return false
+    var used: usize = 0
+    for byte in definition.source.bytes:
+        buffer[used] = byte
+        used += 1
+    buffer[used] = '/'
+    used += 1
+    for byte in module.bytes:
+        buffer[used] = '/' if byte == '.' else byte
+        used += 1
+    return definition.is_development((str)buffer[..<used])
+
+## Whether `path` is `prefix` or lies inside it.
+func under(path: str, prefix: str) -> bool:
+    if not strings.starts_with(path, prefix): return false
+    return path.length == prefix.length or path.bytes[prefix.length] == '/'
+
 ## A dependency checkout may sit outside the package, so `..` is allowed here.
 func local_path_valid(value: str) -> bool:
     if value.length == 0 or value.length > 1024: return false
@@ -280,6 +317,9 @@ pub func decode(text: const u8[]) -> Definition!:
             root = path
             for i in 0..<try doc.property_count(path):
                 let key = try doc.property_name(path, i)
+                if key == "development":
+                    try arena.list(doc, path, key, result.development[0..], &result.development_count)
+                    continue
                 let value = try arena.text(doc, path, key)
                 if key == "owner": result.owner = value
                 elif key == "version": result.version = value
@@ -395,6 +435,18 @@ pub func decode(text: const u8[]) -> Definition!:
     if result.install.length > 0:
         if result.entry.length == 0: error(invalid, "only an application may declare an install script")
         if not path_valid(result.install): error(invalid, "invalid package install path")
+    # What an install builds must not be development material, or it would be left out.
+    for i in 0..<result.development_count:
+        if not path_valid(result.development[i]): error(invalid, "invalid development path")
+    if result.entry.length > 0 and result.is_development(result.entry):
+        error(invalid, "the entry lies in a development path, which luc install leaves out")
+    if result.install.length > 0 and result.is_development(result.install):
+        error(invalid, "the install script lies in a development path, which luc install leaves out")
+    if result.is_development(result.source):
+        error(invalid, "the source root lies in a development path, which luc install leaves out")
+    for i in 0..<result.export_count:
+        if exports_development(&result, exported[i].module):
+            error(invalid, "an exported module lies in a development path, which luc install leaves out")
 
     sort(found, result.dependency_count)
     if result.dependency_count > 0:
