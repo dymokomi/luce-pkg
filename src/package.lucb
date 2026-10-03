@@ -1,7 +1,7 @@
 ## Authored package definition in package.prisma; see docs/PACKAGE_PRISMA.md.
 ## Decoding uses Prism's own reader. Unknown elements and properties are errors.
 import memory
-import luce_prism.prism
+from luce_prism import prism
 import strings
 from semver import parse, invalid
 

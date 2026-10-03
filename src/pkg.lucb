@@ -1,7 +1,7 @@
 ## Package definitions and versions for Luce: the `pkg` export.
 import semver
 import package
-import luce_crypto.native as crypto_native
+from luce_crypto import native as crypto_native
 
 pub let invalid = semver.invalid
 pub type Version = semver.Version
