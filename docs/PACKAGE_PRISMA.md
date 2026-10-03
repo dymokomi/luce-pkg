@@ -16,6 +16,7 @@ def package "luced" {
     str readme = "README.md"
     str entry = "src/main.luc"
     str install = "install.luc"
+    str[] public = ["editor"]
 
     def dependency "luce_ui" {
         str owner = "dymokomi"
@@ -26,9 +27,6 @@ def package "luced" {
         str name = "Luced"
         str identifier = "com.luciaos.luced"
         str icon = "assets/luced.icns"
-    }
-    def export "editor" {
-        str module = "luced.editor"
     }
     def task "ci" {
         str description = "Everything CI runs"
@@ -55,6 +53,7 @@ One root `def package "<name>"`. The registry coordinate is `<owner>/<name>`.
 | `readme` | no | Relative path to a Markdown file rendered on the package page. |
 | `entry` | for a tool or application | Relative path to the program entry. |
 | `install` | no | Relative path to a post-compile install script. Only valid with `entry`. |
+| `public` | for a package others import | `str[]` of the modules other packages may import, by their paths under the source root: `["ui", "widgets.button"]`. A consumer writes `import luce_ui.ui` or `from luce_ui import ui`; a module not listed is the package's own. Sources sit directly under the source root, never under a folder repeating the package's name. |
 | `development` | no | `str[]` of paths, relative to the root, that are only for developing the package: tool scripts, benchmarks, internal docs. `tests` and `dev` are development paths in every package without being listed. |
 
 Children of the root:
@@ -76,8 +75,6 @@ Children of the root:
 - `def native "<any-name>"`, at most one: C inputs built and linked with the package,
   as `str[]` properties `sources` and `link_search` (relative paths), and `libraries`,
   `frameworks` and `pkg_config` (plain names, never options).
-- `def export "<import-name>"` with `module`: a public module, as in the
-  compiler's `[exports]`.
 - `def task "<name>"` with `cmd`, optional `description` and optional
   `str[] depends`: a workflow run by `luc run <name>`.
 
@@ -96,7 +93,7 @@ always contains everything, so a clone or `--dev` install can run the tests.
 
 Keep tests, fixtures and test vectors under `tests/`. What an install builds may not be
 development material: a definition is refused when its `entry`, `install` script, source
-root or any exported module lies in a development path.
+root or any public module lies in a development path.
 
 ## Install scripts
 

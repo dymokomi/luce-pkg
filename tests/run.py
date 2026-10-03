@@ -8,8 +8,8 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 MODES = {f"native{i}": ["--native", "--opt", str(i)] for i in range(4)}
 MODES.update({"c": ["--backend=c"], "c-release": ["--backend=c", "--release"]})
-SOURCES = [("src/luce_pkg/pkg_tests.lucb", "pkg-tests"),
-           ("src/luce_pkg/package_tests.lucb", "package-tests")]
+SOURCES = [("src/pkg_tests.lucb", "pkg-tests"),
+           ("src/package_tests.lucb", "package-tests")]
 
 
 def main():

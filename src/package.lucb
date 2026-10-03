@@ -1,13 +1,13 @@
 ## Authored package definition in package.prisma; see docs/PACKAGE_PRISMA.md.
 ## Decoding uses Prism's own reader. Unknown elements and properties are errors.
 import memory
-import prism
+import luce_prism.prism
 import strings
-from luce_pkg.semver import parse, invalid
+from semver import parse, invalid
 
 pub let max_size: usize = 65536
 pub let max_dependencies: usize = 128
-pub let max_exports: usize = 64
+pub let max_public: usize = 64
 pub let max_tasks: usize = 64
 pub let max_task_depends: usize = 16
 pub let max_development: usize = 16
@@ -44,10 +44,6 @@ pub struct Native:
     pub var pkg_config: str[16]
     pub var pkg_config_count: usize
 
-pub struct Export:
-    pub var name: str
-    pub var module: str
-
 pub struct Task:
     pub var name: str
     pub var command: str
@@ -59,7 +55,6 @@ pub struct Task:
 pub struct Definition:
     var storage: u8[]
     var dependencies: Requirement[]
-    var exports: Export[]
     var tasks: Task[]
     pub var name: str
     pub var owner: str
@@ -78,8 +73,11 @@ pub struct Definition:
     ## `application.name` is empty when the package declares no desktop bundle.
     pub var application: Application
     pub var dependency_count: usize
-    pub var export_count: usize
     pub var task_count: usize
+    ## The modules other packages may import (`str[] public`), by their paths under the
+    ## source root: `ui`, `widgets.button` (base.md §16.4).
+    pub var public: str[64]
+    pub var public_count: usize
     ## Development-only paths the package declares (`str[] development`), relative to its
     ## root, besides `tests` and `dev`. `luc install` leaves all of them out unless `--dev`.
     pub var development: str[16]
@@ -103,10 +101,6 @@ pub struct Definition:
         if index >= self.dependency_count: error(invalid, "package dependency index out of bounds")
         return self.dependencies[index]
 
-    pub func export_at(index: usize) -> Export!:
-        if index >= self.export_count: error(invalid, "package export index out of bounds")
-        return self.exports[index]
-
     ## Whether `path` (relative to the package root, `/`-separated) is development
     ## material: `tests`, `dev`, a declared development path, or anything inside one.
     pub func is_development(path: str) -> bool:
@@ -122,7 +116,6 @@ pub struct Definition:
 
     pub mutating func close():
         if self.dependencies.length > 0: free(self.dependencies) in memory.heap
-        if self.exports.length > 0: free(self.exports) in memory.heap
         if self.tasks.length > 0: free(self.tasks) in memory.heap
         if self.storage.length > 0: free(self.storage) in memory.heap
         self = Definition()
@@ -206,9 +199,9 @@ func path_valid(value: str) -> bool:
         start = end + 1
     return true
 
-## Whether exported `module` (`luce_crypto.crypto`) would sit in a development path of
-## `definition`: its file `<source>/luce_crypto/crypto.lucb` or its directory.
-func exports_development(definition: const Definition*, module: str) -> bool:
+## Whether public `module` (`widgets.button`) would sit in a development path of
+## `definition`: its file `<source>/widgets/button.lucb` or its directory.
+func public_development(definition: const Definition*, module: str) -> bool:
     var buffer: u8[1200]
     if definition.source.length + 1 + module.length + 5 > buffer.length: return false
     var used: usize = 0
@@ -220,7 +213,11 @@ func exports_development(definition: const Definition*, module: str) -> bool:
     for byte in module.bytes:
         buffer[used] = '/' if byte == '.' else byte
         used += 1
-    return definition.is_development((str)buffer[..<used])
+    if definition.is_development((str)buffer[..<used]): return true
+    for suffix in [".lucb", ".luc"]:
+        for i in 0..<suffix.length: buffer[used + i] = suffix.bytes[i]
+        if definition.is_development((str)buffer[..<used + suffix.length]): return true
+    return false
 
 ## Whether `path` is `prefix` or lies inside it.
 func under(path: str, prefix: str) -> bool:
@@ -295,7 +292,6 @@ pub func decode(text: const u8[]) -> Definition!:
     result.storage = try alloc u8[text.length] in memory.heap
     var arena = Arena(bytes = result.storage)
     var found: Requirement[128]
-    var exported: Export[64]
     var declared = try alloc Task[max_tasks] in memory.heap
     defer free(declared) in memory.heap
     var root = ""
@@ -319,6 +315,9 @@ pub func decode(text: const u8[]) -> Definition!:
                 let key = try doc.property_name(path, i)
                 if key == "development":
                     try arena.list(doc, path, key, result.development[0..], &result.development_count)
+                    continue
+                if key == "public":
+                    try arena.list(doc, path, key, result.public[0..], &result.public_count)
                     continue
                 let value = try arena.text(doc, path, key)
                 if key == "owner": result.owner = value
@@ -384,16 +383,7 @@ pub func decode(text: const u8[]) -> Definition!:
             for i in 0..<result.native.pkg_config_count:
                 if not token_valid(result.native.pkg_config[i]): error(invalid, "invalid pkg-config name")
         elif depth == 2 and kind == "export":
-            if result.export_count >= max_exports: error(invalid, "too many package exports")
-            if not module_valid(name) : error(invalid, "invalid export name")
-            var entry = Export(name = try arena.copy(name))
-            for i in 0..<try doc.property_count(path):
-                let key = try doc.property_name(path, i)
-                if key != "module": error(invalid, "unknown export property")
-                entry.module = try arena.text(doc, path, key)
-            if not module_valid(entry.module): error(invalid, "export module is missing or invalid")
-            exported[result.export_count] = entry
-            result.export_count += 1
+            error(invalid, "a package names its public modules in `str[] public = [...]`; `def export` is gone")
         elif depth == 2 and kind == "task":
             if result.task_count >= max_tasks: error(invalid, "too many package tasks")
             if not name_valid(name): error(invalid, "invalid task name")
@@ -444,17 +434,15 @@ pub func decode(text: const u8[]) -> Definition!:
         error(invalid, "the install script lies in a development path, which luc install leaves out")
     if result.is_development(result.source):
         error(invalid, "the source root lies in a development path, which luc install leaves out")
-    for i in 0..<result.export_count:
-        if exports_development(&result, exported[i].module):
-            error(invalid, "an exported module lies in a development path, which luc install leaves out")
+    for i in 0..<result.public_count:
+        if not module_valid(result.public[i]): error(invalid, "a public module is a dotted path under the source root")
+        if public_development(&result, result.public[i]):
+            error(invalid, "a public module lies in a development path, which luc install leaves out")
 
     sort(found, result.dependency_count)
     if result.dependency_count > 0:
         result.dependencies = try alloc Requirement[result.dependency_count] in memory.heap
         for i in 0..<result.dependency_count: result.dependencies[i] = found[i]
-    if result.export_count > 0:
-        result.exports = try alloc Export[result.export_count] in memory.heap
-        for i in 0..<result.export_count: result.exports[i] = exported[i]
     if result.task_count > 0:
         result.tasks = try alloc Task[result.task_count] in memory.heap
         for i in 0..<result.task_count: result.tasks[i] = declared[i]

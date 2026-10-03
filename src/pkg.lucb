@@ -1,13 +1,12 @@
 ## Package definitions and versions for Luce: the `pkg` export.
-import luce_pkg.semver as semver
-import luce_pkg.package as package
-import crypto_native
+import semver
+import package
+import luce_crypto.native as crypto_native
 
 pub let invalid = semver.invalid
 pub type Version = semver.Version
 pub type Definition = package.Definition
 pub type Requirement = package.Requirement
-pub type Export = package.Export
 pub type Task = package.Task
 pub type Application = package.Application
 pub type Native = package.Native

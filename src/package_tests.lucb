@@ -1,7 +1,7 @@
-import luce_pkg.package as package
-from luce_pkg.semver import invalid
+import package
+from semver import invalid
 
-let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str kind = \"application\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def export \"editor\" {\n        str module = \"luced.editor\"\n    }\n    def application \"bundle\" {\n        str name = \"Luced Editor\"\n        str identifier = \"com.luciaos.luced\"\n        str icon = \"assets/luced.icns\"\n    }\n    def native \"inputs\" {\n        str[] sources = [\"native/a.c\", \"native/b.c\"]\n        str[] frameworks = [\"AppKit\"]\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
+let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str kind = \"application\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    str[] public = [\"editor\"]\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def application \"bundle\" {\n        str name = \"Luced Editor\"\n        str identifier = \"com.luciaos.luced\"\n        str icon = \"assets/luced.icns\"\n    }\n    def native \"inputs\" {\n        str[] sources = [\"native/a.c\", \"native/b.c\"]\n        str[] frameworks = [\"AppKit\"]\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
 
 func rejected(text: str) -> bool:
     var value = package.decode(text.bytes) catch failure:
@@ -30,11 +30,9 @@ pub func main(arguments: str[]) -> i32!:
     let second = try value.dependency_at(1)
     assert(first.name == "luce-json" and first.owner == "dymokomi" and first.version == "1.2.0" and first.path == "")
     assert(second.name == "luce_ui" and second.version == "^0.4.0" and second.path == "../luce-ui")
-    assert(value.export_count == 1 and value.task_count == 2 and value.is_bundled())
+    assert(value.public_count == 1 and value.public[0] == "editor" and value.task_count == 2 and value.is_bundled())
     assert(value.native.source_count == 2 and value.native.sources[1] == "native/b.c" and value.native.framework_count == 1 and value.native.frameworks[0] == "AppKit")
     assert(value.application.name == "Luced Editor" and value.application.identifier == "com.luciaos.luced" and value.application.icon == "assets/luced.icns")
-    let exported = try value.export_at(0)
-    assert(exported.name == "editor" and exported.module == "luced.editor")
     let ci = try value.task_at(0)
     assert(ci.name == "ci" and ci.command == "" and ci.depend_count == 2 and ci.depends[1] == "unit")
     let tests = try value.task_at(1)
@@ -55,11 +53,11 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected(try library("    def native \"sparc-linux\" {\n        str[] libraries = [\"m\"]\n    }\n", buffer)))
 
     # Development paths: tests and dev always, plus what the package declares.
-    var developed = try package.decode((try library("    str[] development = [\"tools\", \"docs/internal\", \"src/demo/bench.lucb\"]\n    def export \"demo\" {\n        str module = \"demo.demo\"\n    }\n", buffer)).bytes)
+    var developed = try package.decode((try library("    str[] development = [\"tools\", \"docs/internal\", \"src/bench.lucb\"]\n    str[] public = [\"demo\"]\n", buffer)).bytes)
     assert(developed.development_count == 3)
     assert(developed.is_development("tests") and developed.is_development("tests/vectors/a.txt") and developed.is_development("dev/notes.md"))
-    assert(developed.is_development("tools/gen.py") and developed.is_development("docs/internal/x.md") and developed.is_development("src/demo/bench.lucb"))
-    assert(not developed.is_development("testsuite") and not developed.is_development("docs/API.md") and not developed.is_development("src/demo/demo.lucb"))
+    assert(developed.is_development("tools/gen.py") and developed.is_development("docs/internal/x.md") and developed.is_development("src/bench.lucb"))
+    assert(not developed.is_development("testsuite") and not developed.is_development("docs/API.md") and not developed.is_development("src/demo.lucb"))
     assert(not developed.is_development("README.md") and not developed.is_development("src"))
     developed.close()
     var defaults = try package.decode((try library("", buffer)).bytes)
@@ -68,7 +66,7 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected(try library("    str[] development = [\"../outside\"]\n", buffer)))
     assert(rejected(try library("    str development = \"tools\"\n", buffer)))
     assert(rejected(try library("    str[] development = [\"src\"]\n", buffer)))
-    assert(rejected(try library("    str[] development = [\"src/demo\"]\n    def export \"demo\" {\n        str module = \"demo.demo\"\n    }\n", buffer)))
+    assert(rejected(try library("    str[] development = [\"src/demo.lucb\"]\n    str[] public = [\"demo\"]\n", buffer)))
     assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"tool\"\n    str language = \"luce\"\n    str entry = \"tools/main.luc\"\n    str[] development = [\"tools\"]\n}\n"))
     assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"tool\"\n    str language = \"luce\"\n    str entry = \"tests/main.luc\"\n}\n"))
 
@@ -82,7 +80,9 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected(try library("    str entry = \"/abs/main.luc\"\n", buffer)))
     assert(rejected(try library("    str entry = \"src\\\\main.luc\"\n", buffer)))
     assert(rejected(try library("    str description = \"two\\nlines\"\n", buffer)))
-    assert(rejected(try library("    def export \"x\" {\n        str module = \"not a module\"\n    }\n", buffer)))
+    assert(rejected(try library("    str[] public = [\"not a module\"]\n", buffer)))
+    # the old export element is gone, with a message that names its replacement
+    assert(rejected(try library("    def export \"x\" {\n        str module = \"demo.x\"\n    }\n", buffer)))
     assert(rejected(try library("    def task \"t\" {\n        str description = \"nothing to do\"\n    }\n", buffer)))
     assert(rejected(try library("    def application \"bundle\" {\n        str name = \"Demo\"\n        str identifier = \"com.example.demo\"\n    }\n", buffer)))
     assert(rejected(try library("    str entry = \"src/main.lucb\"\n    def application \"bundle\" {\n        str name = \"Demo\"\n        str identifier = \"notreversedns\"\n    }\n", buffer)))
