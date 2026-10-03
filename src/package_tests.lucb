@@ -92,8 +92,11 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected(try library("    def widget \"x\" {\n    }\n", buffer)))
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"Not Valid\"\n        str version = \"1.0.0\"\n    }\n", buffer)))
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n        str version = \">=1\"\n    }\n", buffer)))
+    # no version: the newest release
+    var newest = try package.decode((try library("    def dependency \"a\" {\n        str owner = \"acme\"\n    }\n", buffer)).bytes)
+    defer newest.close()
+    assert(newest.dependency_count == 1 and (try newest.dependency_at(0)).version == "")
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n        str version = \"1.0.0\"\n        str git = \"x\"\n    }\n", buffer)))
-    assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n    }\n", buffer)))
     assert(rejected("#prisma 4.0\ndef package \"a\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce\"\n}\ndef package \"b\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce\"\n}\n"))
     assert(rejected("#prisma 4.0\ndef package \"demo\" {\n    str owner = \"acme\"\n    str version = \"1.0\"\n    str language = \"luce\"\n}\n"))
     assert(rejected("#prisma 4.0\ndef package \"demo\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"rust\"\n}\n"))

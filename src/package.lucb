@@ -18,6 +18,7 @@ pub let default_development: str[2] = ["tests", "dev"]
 pub struct Requirement:
     pub var name: str
     pub var owner: str
+    ## A caret requirement (`^1.2.0`) or an exact version; empty for the newest release.
     pub var version: str
     ## Empty, or a local checkout used instead of the registry release.
     pub var path: str
@@ -343,7 +344,8 @@ pub func decode(text: const u8[]) -> Definition!:
                 elif key == "path": entry.path = value
                 else: error(invalid, "unknown dependency property")
             if not name_valid(entry.owner): error(invalid, "dependency owner is missing or invalid")
-            if not requirement_valid(entry.version): error(invalid, "dependency version is missing or invalid")
+            # no version asks for the newest release; luc.lock records the one chosen
+            if entry.version.length > 0 and not requirement_valid(entry.version): error(invalid, "dependency version is invalid")
             if entry.path.length > 0 and not local_path_valid(entry.path): error(invalid, "invalid dependency path")
             for i in 0..<result.dependency_count:
                 if found[i].name == entry.name: error(invalid, "duplicate package dependency")
