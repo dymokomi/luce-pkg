@@ -1,9 +1,7 @@
 # package.prisma
 
-`package.prisma` is the one authored project file. `luce.toml` is no longer
-written by hand: `luc` generates it at the project root (where the compilers look
-for it) before every compiler invocation, and it is git-ignored. It is ordinary
-Prism text, read with Prism's own decoder. There is no legacy format to support.
+`package.prisma` is the one project file, read by `luc` and by both compilers. It is
+ordinary Prism text, read with Prism's own decoder.
 
 ```text
 #prisma 4.0
@@ -53,7 +51,7 @@ One root `def package "<name>"`. The registry coordinate is `<owner>/<name>`.
 | `readme` | no | Relative path to a Markdown file rendered on the package page. |
 | `entry` | for a tool or application | Relative path to the program entry. |
 | `install` | no | Relative path to a post-compile install script. Only valid with `entry`. |
-| `public` | for a package others import | `str[]` of the modules other packages may import, by their paths under the source root: `["ui", "widgets.button"]`. A consumer writes `import luce_ui.ui` or `from luce_ui import ui`; a module not listed is the package's own. Sources sit directly under the source root, never under a folder repeating the package's name. |
+| `public` | for a package others import | `str[]` of the modules other packages may import, by their paths under the source root: `["ui", "widgets.button"]`. A consumer writes `from luce_ui import ui` (or `import luce_ui.ui`); a module not listed is the package's own. Sources sit directly under the source root, never under a folder repeating the package's name. |
 | `development` | no | `str[]` of paths, relative to the root, that are only for developing the package: tool scripts, benchmarks, internal docs. `tests` and `dev` are development paths in every package without being listed. |
 
 Children of the root:
