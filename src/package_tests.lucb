@@ -110,5 +110,20 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"tool\"\n    str language = \"luce\"\n}\n"))
     assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"application\"\n    str language = \"luce\"\n    str entry = \"src/main.luc\"\n}\n"))
     assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"tool\"\n    str language = \"luce\"\n    str entry = \"src/main.luc\"\n    def application \"bundle\" {\n        str name = \"X\"\n        str identifier = \"com.example.x\"\n    }\n}\n"))
+    # a license is an SPDX expression
+    for spdx in ["MIT", "MIT OR Apache-2.0", "(MIT OR Apache-2.0) AND BSD-3-Clause", "GPL-2.0+ WITH Classpath-exception-2.0", "LicenseRef-acme"]:
+        var buffer_line: u8[128]
+        var licensed = try package.decode((try library(try strings.format(buffer_line, f"    str license = \"{spdx}\"\n"), buffer)).bytes)
+        assert(licensed.license == spdx)
+        licensed.close()
+    for bad in ["MIT OR", "OR MIT", "MIT Apache-2.0", "(MIT", "MIT)", "MIT/X11", "+MIT"]:
+        var buffer_line: u8[128]
+        assert(rejected(try library(try strings.format(buffer_line, f"    str license = \"{bad}\"\n"), buffer)))
+    # a property set twice in one element is refused where it is set again
+    let twice = package.decode((try library("    str[] public = [\"a\"]\n    str[] public = [\"a\"]\n", buffer)).bytes) catch failure:
+        assert(failure.code == invalid)
+        assert(failure.message == "package.prisma:8:5: a property is set twice in one element")
+        recover package.Definition()
+    assert(twice.name == "")
     print("PASS package.prisma definition cases")
     return 0

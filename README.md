@@ -4,7 +4,7 @@ Package definitions for Luce, written in Luce Base. MIT OR Apache-2.0.
 
 The `pkg` export decodes `package.prisma`, the one authored project file, into a
 `Definition`: identity, owner, version, kind (`package`, `application` or `tool`),
-language, entry, description and README, dependencies, exports, tasks, native
+language, entry, description, license and README, dependencies, exports, tasks, native
 inputs and the desktop bundle. Unknown elements and properties are errors, and each
 kind decides what else the file must and must not say. The format is described in
 [docs/PACKAGE_PRISMA.md](docs/PACKAGE_PRISMA.md).

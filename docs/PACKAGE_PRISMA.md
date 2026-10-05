@@ -48,11 +48,16 @@ One root `def package "<name>"`. The registry coordinate is `<owner>/<name>`.
 | `language` | yes | `luce` or `luce-base`. |
 | `source` | no | Source directory, default `src`. |
 | `description` | no | One line, at most 256 bytes. Shown on the website and in search. |
+| `license` | no | The package's license as an SPDX expression: `MIT`, `MIT OR Apache-2.0`, `GPL-2.0+ WITH Classpath-exception-2.0`. Shown on the package page. |
 | `readme` | no | Relative path to a Markdown file rendered on the package page. |
 | `entry` | for a tool or application | Relative path to the program entry. |
 | `install` | no | Relative path to a post-compile install script. Only valid with `entry`. |
 | `public` | for a package others import | `str[]` of the modules other packages may import, by their paths under the source root: `["ui", "widgets.button"]`. A consumer writes `from luce_ui import ui` (or `import luce_ui.ui`); a module not listed is the package's own. Sources sit directly under the source root, never under a folder repeating the package's name. |
 | `development` | no | `str[]` of paths, relative to the root, that are only for developing the package: tool scripts, benchmarks, internal docs. `tests` and `dev` are development paths in every package without being listed. |
+
+Each property is set at most once in its element; a second setting is refused as
+`package.prisma:<line>:<column>: a property is set twice in one element`, as is any text
+Prism cannot read, at the place it stops.
 
 Children of the root:
 

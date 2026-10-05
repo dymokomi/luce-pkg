@@ -65,6 +65,8 @@ pub struct Definition:
     pub var language: str
     pub var source: str
     pub var description: str
+    ## Empty, or the package's license as an SPDX expression: `MIT OR Apache-2.0`.
+    pub var license: str
     pub var readme: str
     ## Empty for a library; the program entry path for an application.
     pub var entry: str
@@ -237,6 +239,48 @@ func requirement_valid(value: str) -> bool:
     _ = parse(exact) catch: return false
     return true
 
+## An SPDX license expression: identifiers (`MIT`, `Apache-2.0`, `GPL-2.0+`,
+## `LicenseRef-x`, `DocumentRef-a:LicenseRef-b`) joined by `AND`, `OR` and `WITH`, with
+## parentheses, on one line. Which identifiers SPDX lists is not checked.
+func license_valid(value: str) -> bool:
+    if value.length == 0 or not line_valid(value): return false
+    var open: usize
+    # whether the next word is an identifier (true) or an operator (false)
+    var operand = true
+    var i: usize
+    while i < value.length:
+        let byte = value.bytes[i]
+        if byte == ' ':
+            i += 1
+        elif byte == '(':
+            if not operand: return false
+            open += 1
+            i += 1
+        elif byte == ')':
+            if operand or open == 0: return false
+            open -= 1
+            i += 1
+        else:
+            var end = i
+            while end < value.length and value.bytes[end] != ' ' and value.bytes[end] != '(' and value.bytes[end] != ')':
+                end += 1
+            let word = (str)value.bytes[i..<end]
+            if word == "AND" or word == "OR" or word == "WITH":
+                if operand: return false
+            elif not operand or not license_identifier(word):
+                return false
+            operand = not operand
+            i = end
+    return not operand and open == 0
+
+func license_identifier(word: str) -> bool:
+    for i in 0..<word.length:
+        let byte = word.bytes[i]
+        let plain = (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or byte == '.' or byte == '-' or byte == ':'
+        # `+` means "or later" and ends an identifier
+        if not plain and not (byte == '+' and i == word.length - 1 and i > 0): return false
+    return true
+
 func line_valid(value: str) -> bool:
     if value.length > 256: return false
     for byte in value.bytes:
@@ -281,9 +325,22 @@ func sort(values: Requirement[], count: usize):
             at -= 1
         values[at] = current
 
+## Where the last refused package.prisma of this thread went wrong, and why.
+local var diagnosis: u8[320]
+
+## Prism's refusal of package.prisma, as `package.prisma:line:column: why`. The text
+## lives in this thread's `diagnosis` until the next refusal.
+func located(result: prism.DecodeResult*) -> str!:
+    let why = result.error_message()
+    let shown = (str)why.bytes[..<why.length if why.length < 240 else 240]
+    return try strings.format(diagnosis, f"package.prisma:{result.line()}:{result.column()}: {shown}")
+
 pub func decode(text: const u8[]) -> Definition!:
     if text.length == 0 or text.length > max_size: error(invalid, "package definition size outside bounds")
-    let reference = prism.Document.decode(text) catch: error(invalid, "package.prisma is not valid Prism text")
+    let diagnosed = try prism.decode_diagnosed(text, prism.Codec.prisma)
+    defer diagnosed.release()
+    if not diagnosed.value().ok(): error(invalid, try located(diagnosed.value()))
+    let reference = try diagnosed.value().document()
     defer reference.release()
     let doc = reference.value()
     if doc.connection_count() != 0: error(invalid, "package.prisma may not contain connections")
@@ -327,6 +384,7 @@ pub func decode(text: const u8[]) -> Definition!:
                 elif key == "language": result.language = value
                 elif key == "source": result.source = value
                 elif key == "description": result.description = value
+                elif key == "license": result.license = value
                 elif key == "readme": result.readme = value
                 elif key == "entry": result.entry = value
                 elif key == "install": result.install = value
@@ -410,6 +468,7 @@ pub func decode(text: const u8[]) -> Definition!:
     if result.source.length == 0: result.source = "src"
     if not path_valid(result.source): error(invalid, "invalid package source path")
     if not line_valid(result.description): error(invalid, "package description must be one line of at most 256 bytes")
+    if result.license.length > 0 and not license_valid(result.license): error(invalid, "package license must be an SPDX expression, such as MIT OR Apache-2.0")
     if result.readme.length > 0 and not path_valid(result.readme): error(invalid, "invalid package readme path")
     if result.entry.length > 0 and not path_valid(result.entry): error(invalid, "invalid package entry path")
     # The kind decides what else the definition must and must not say.
