@@ -1,5 +1,6 @@
 import package
 from semver import invalid
+import strings
 
 let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str kind = \"application\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    str[] public = [\"editor\"]\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def application \"bundle\" {\n        str name = \"Luced Editor\"\n        str identifier = \"com.luciaos.luced\"\n        str icon = \"assets/luced.icns\"\n    }\n    def native \"inputs\" {\n        str[] sources = [\"native/a.c\", \"native/b.c\"]\n        str[] frameworks = [\"AppKit\"]\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
 
@@ -11,16 +12,16 @@ func rejected(text: str) -> bool:
     return false
 
 func out_of_bounds(value: package.Definition*) -> bool:
-    discard(value.dependency_at(2) catch failure:
+    _ = value.dependency_at(2) catch failure:
         assert(failure.code == invalid)
-        return true)
+        return true
     return false
 
 func library(body: str, buffer: u8[]) -> str!:
-    return try format(buffer, f"#prisma 4.0\ndef package \"demo\" {{\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"package\"\n    str language = \"luce-base\"\n{body}}}\n")
+    return try strings.format(buffer, f"#prisma 4.0\ndef package \"demo\" {{\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"package\"\n    str language = \"luce-base\"\n{body}}}\n")
 
 pub func main(arguments: str[]) -> i32!:
-    discard(arguments)
+    _ = arguments
     var value = try package.decode(sample.bytes)
     assert(value.name == "luced" and value.owner == "dymokomi" and value.version == "0.3.0")
     assert(value.kind == "application" and value.language == "luce" and value.source == "src" and value.is_application() and not value.is_tool())

@@ -115,7 +115,7 @@ pub struct Definition:
         if index >= self.task_count: error(invalid, "package task index out of bounds")
         return self.tasks[index]
 
-    pub mutating func close():
+    pub func close():
         if self.dependencies.length > 0: free(self.dependencies) in memory.heap
         if self.tasks.length > 0: free(self.tasks) in memory.heap
         if self.storage.length > 0: free(self.storage) in memory.heap
@@ -234,7 +234,7 @@ func local_path_valid(value: str) -> bool:
 
 func requirement_valid(value: str) -> bool:
     let exact = (str)value.bytes[1..] if value.length > 1 and value.bytes[0] == '^' else value
-    discard(parse(exact) catch: return false)
+    _ = parse(exact) catch: return false
     return true
 
 func line_valid(value: str) -> bool:
@@ -248,21 +248,21 @@ struct Arena:
     var bytes: u8[]
     var used: usize
 
-    mutating func copy(text: str) -> str!:
+    func copy(text: str) -> str!:
         if self.used + text.length > self.bytes.length: error(invalid, "package definition exceeds its bound")
         let start = self.used
         for i in 0..<text.length: self.bytes[start + i] = text.bytes[i]
         self.used += text.length
         return (str)self.bytes[start..<self.used]
 
-    mutating func text(doc: prism.Document*, path: str, name: str) -> str!:
+    func text(doc: prism.Document*, path: str, name: str) -> str!:
         let value = try doc.get(path, name)
         defer value.release()
         if value.value().dtype() != prism.DType.string or value.value().rank() != 0:
             error(invalid, "package property must be a single str")
         return try self.copy(try value.value().text_at())
 
-    mutating func list(doc: prism.Document*, path: str, name: str, output: str[], count: usize*) -> !:
+    func list(doc: prism.Document*, path: str, name: str, output: str[], count: usize*) -> !:
         let value = try doc.get(path, name)
         defer value.release()
         if value.value().dtype() != prism.DType.string or value.value().rank() != 1:
@@ -290,10 +290,10 @@ pub func decode(text: const u8[]) -> Definition!:
 
     var result: Definition
     errdefer result.close()
-    result.storage = try alloc u8[text.length] in memory.heap
+    result.storage = try new u8[text.length] --- in memory.heap
     var arena = Arena(bytes = result.storage)
     var found: Requirement[128]
-    var declared = try alloc Task[max_tasks] in memory.heap
+    var declared = try new Task[max_tasks] --- in memory.heap
     defer free(declared) in memory.heap
     var root = ""
     var seen_application = false
@@ -405,7 +405,7 @@ pub func decode(text: const u8[]) -> Definition!:
 
     if root.length == 0: error(invalid, "package.prisma needs exactly one root package element")
     if not name_valid(result.owner): error(invalid, "package owner is missing or invalid")
-    discard(parse(result.version) catch: error(invalid, "package version is missing or invalid"))
+    _ = parse(result.version) catch: error(invalid, "package version is missing or invalid")
     if result.language != "luce" and result.language != "luce-base": error(invalid, "package language must be luce or luce-base")
     if result.source.length == 0: result.source = "src"
     if not path_valid(result.source): error(invalid, "invalid package source path")
@@ -443,9 +443,9 @@ pub func decode(text: const u8[]) -> Definition!:
 
     sort(found, result.dependency_count)
     if result.dependency_count > 0:
-        result.dependencies = try alloc Requirement[result.dependency_count] in memory.heap
+        result.dependencies = try new Requirement[result.dependency_count] --- in memory.heap
         for i in 0..<result.dependency_count: result.dependencies[i] = found[i]
     if result.task_count > 0:
-        result.tasks = try alloc Task[result.task_count] in memory.heap
+        result.tasks = try new Task[result.task_count] --- in memory.heap
         for i in 0..<result.task_count: result.tasks[i] = declared[i]
     return result
