@@ -18,7 +18,6 @@ def package "luced" {
 
     def dependency "luce_ui" {
         str owner = "dymokomi"
-        str version = "^0.4.0"
         str path = "../luce-ui"
     }
     def application "bundle" {
@@ -62,9 +61,10 @@ Prism cannot read, at the place it stops.
 Children of the root:
 
 - `def dependency "<name>"` — `<name>` is the dependency's package name, which is
-  also the key the compiler requires. `owner` is required; `version` is a caret
-  requirement or an exact version, and without one the dependency is the newest release,
-  which `luc.lock` then records; the registry coordinate is `<owner>/<name>`.
+  also the key the compiler requires. `owner` is required. Leave `version` out: the
+  dependency is then the newest release, which `luc.lock` records. A project that must
+  hold back gives a caret requirement (`^0.4.0`) or an exact version (`luc add
+  owner/name@^0.4.0` writes one); the registry coordinate is `<owner>/<name>`.
   Optional `path` points at a local checkout that is used instead of the registry
   release, for working across repositories.
 - `def application "<any-name>"`, at most one and only with `entry`: how the program
