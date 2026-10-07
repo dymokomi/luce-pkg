@@ -175,20 +175,15 @@ func module_valid(value: str) -> bool:
         start = end + 1
     return true
 
-## Relative, `/`-separated, no empty, `.` or `..` segment, backslash, colon or control byte.
-## `inputs` or `all` for every target, an operating system (`macos`, `linux`, `windows`,
-## `wasi`) on each of its architectures, or one exact target such as `x86_64-windows`.
+## `inputs` or `all` for every target, an operating system (`macos`, `linux`, `windows`),
+## or one exact target (`arm64-macos`, `x86_64-linux`, `x86_64-windows`).
 func native_element_valid(name: str) -> bool:
-    let systems = ["macos", "linux", "windows", "wasi"]
     if name == "inputs" or name == "all": return true
-    for system in systems:
-        if name == system: return true
-    let (machine, system) = strings.split_once(name, "-") else return false
-    if machine != "arm64" and machine != "x86_64" and machine != "wasm32": return false
-    for known in systems:
-        if system == known: return true
+    for known in ["macos", "linux", "windows", "arm64-macos", "x86_64-linux", "x86_64-windows"]:
+        if name == known: return true
     return false
 
+## Relative, `/`-separated, no empty, `.` or `..` segment, backslash, colon or control byte.
 func path_valid(value: str) -> bool:
     if value.length == 0 or value.length > 1024: return false
     var start: usize
