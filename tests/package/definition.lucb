@@ -1,17 +1,15 @@
-import package
-from semver import invalid
-import strings
-
+## package.prisma decoding: every property, native targets, development paths, licenses
+## and refusals.
 let sample = "#prisma 4.0\ndef package \"luced\" {\n    str owner = \"dymokomi\"\n    str version = \"0.3.0\"\n    str kind = \"application\"\n    str language = \"luce\"\n    str description = \"A text editor written in Luce\"\n    str readme = \"README.md\"\n    str entry = \"src/main.luc\"\n    str install = \"install.luc\"\n    str[] public = [\"editor\"]\n    def dependency \"luce_ui\" {\n        str owner = \"dymokomi\"\n        str version = \"^0.4.0\"\n        str path = \"../luce-ui\"\n    }\n    def dependency \"luce-json\" {\n        str owner = \"dymokomi\"\n        str version = \"1.2.0\"\n    }\n    def application \"bundle\" {\n        str name = \"Luced Editor\"\n        str identifier = \"com.luciaos.luced\"\n        str icon = \"assets/luced.icns\"\n    }\n    def native \"inputs\" {\n        str[] sources = [\"native/a.c\", \"native/b.c\"]\n        str[] frameworks = [\"AppKit\"]\n    }\n    def task \"ci\" {\n        str description = \"everything\"\n        str[] depends = [\"check\", \"unit\"]\n    }\n    def task \"unit\" {\n        str cmd = \"luc test\"\n    }\n}\n"
 
 func rejected(text: str) -> bool:
-    var value = package.decode(text.bytes) catch failure:
+    var value = decode(text.bytes) catch failure:
         assert(failure.code == invalid)
         return true
     value.close()
     return false
 
-func out_of_bounds(value: package.Definition*) -> bool:
+func out_of_bounds(value: Definition*) -> bool:
     _ = value.dependency_at(2) catch failure:
         assert(failure.code == invalid)
         return true
@@ -20,9 +18,8 @@ func out_of_bounds(value: package.Definition*) -> bool:
 func library(body: str, buffer: u8[]) -> str!:
     return try strings.format(buffer, f"#prisma 4.0\ndef package \"demo\" {{\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"package\"\n    str language = \"luce-base\"\n{body}}}\n")
 
-pub func main(arguments: str[]) -> i32!:
-    _ = arguments
-    var value = try package.decode(sample.bytes)
+test "package.prisma definition cases":
+    var value = try decode(sample.bytes)
     assert(value.name == "luced" and value.owner == "dymokomi" and value.version == "0.3.0")
     assert(value.kind == "application" and value.language == "luce" and value.source == "src" and value.is_application() and not value.is_tool())
     assert(value.entry == "src/main.luc" and value.install == "install.luc" and value.readme == "README.md")
@@ -43,25 +40,25 @@ pub func main(arguments: str[]) -> i32!:
     assert(value.dependency_count == 0 and value.name == "")
 
     var buffer: u8[2048]
-    var plain = try package.decode((try library("", buffer)).bytes)
+    var plain = try decode((try library("", buffer)).bytes)
     assert(plain.name == "demo" and plain.is_package() and not plain.is_application() and plain.dependency_count == 0)
     plain.close()
     # a native element per target it applies to; their inputs are taken together
-    var targeted = try package.decode((try library("    def native \"macos\" {\n        str[] frameworks = [\"AppKit\"]\n    }\n    def native \"windows\" {\n        str[] libraries = [\"user32\"]\n        str[] link_search = [\"$VULKAN_SDK/Lib\"]\n    }\n    def native \"x86_64-linux\" {\n        str[] libraries = [\"m\"]\n    }\n", buffer)).bytes)
+    var targeted = try decode((try library("    def native \"macos\" {\n        str[] frameworks = [\"AppKit\"]\n    }\n    def native \"windows\" {\n        str[] libraries = [\"user32\"]\n        str[] link_search = [\"$VULKAN_SDK/Lib\"]\n    }\n    def native \"x86_64-linux\" {\n        str[] libraries = [\"m\"]\n    }\n", buffer)).bytes)
     assert(targeted.native.framework_count == 1 and targeted.native.library_count == 2 and targeted.native.libraries[1] == "m")
     targeted.close()
     assert(rejected(try library("    def native \"beos\" {\n        str[] libraries = [\"m\"]\n    }\n", buffer)))
     assert(rejected(try library("    def native \"sparc-linux\" {\n        str[] libraries = [\"m\"]\n    }\n", buffer)))
 
     # Development paths: tests and dev always, plus what the package declares.
-    var developed = try package.decode((try library("    str[] development = [\"tools\", \"docs/internal\", \"src/bench.lucb\"]\n    str[] public = [\"demo\"]\n", buffer)).bytes)
+    var developed = try decode((try library("    str[] development = [\"tools\", \"docs/internal\", \"src/bench.lucb\"]\n    str[] public = [\"demo\"]\n", buffer)).bytes)
     assert(developed.development_count == 3)
     assert(developed.is_development("tests") and developed.is_development("tests/vectors/a.txt") and developed.is_development("dev/notes.md"))
     assert(developed.is_development("tools/gen.py") and developed.is_development("docs/internal/x.md") and developed.is_development("src/bench.lucb"))
     assert(not developed.is_development("testsuite") and not developed.is_development("docs/API.md") and not developed.is_development("src/demo.lucb"))
     assert(not developed.is_development("README.md") and not developed.is_development("src"))
     developed.close()
-    var defaults = try package.decode((try library("", buffer)).bytes)
+    var defaults = try decode((try library("", buffer)).bytes)
     assert(defaults.development_count == 0 and defaults.is_development("tests/run.py") and not defaults.is_development("tools/x"))
     defaults.close()
     assert(rejected(try library("    str[] development = [\"../outside\"]\n", buffer)))
@@ -94,7 +91,7 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"Not Valid\"\n        str version = \"1.0.0\"\n    }\n", buffer)))
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n        str version = \">=1\"\n    }\n", buffer)))
     # no version: the newest release
-    var newest = try package.decode((try library("    def dependency \"a\" {\n        str owner = \"acme\"\n    }\n", buffer)).bytes)
+    var newest = try decode((try library("    def dependency \"a\" {\n        str owner = \"acme\"\n    }\n", buffer)).bytes)
     defer newest.close()
     assert(newest.dependency_count == 1 and (try newest.dependency_at(0)).version == "")
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"acme\"\n        str version = \"1.0.0\"\n        str git = \"x\"\n    }\n", buffer)))
@@ -102,7 +99,7 @@ pub func main(arguments: str[]) -> i32!:
     assert(rejected("#prisma 4.0\ndef package \"demo\" {\n    str owner = \"acme\"\n    str version = \"1.0\"\n    str language = \"luce\"\n}\n"))
     assert(rejected("#prisma 4.0\ndef package \"demo\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"rust\"\n}\n"))
     let tool = "#prisma 4.0\ndef package \"grep\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"tool\"\n    str language = \"luce\"\n    str entry = \"src/main.luc\"\n}\n"
-    var command = try package.decode(tool.bytes)
+    var command = try decode(tool.bytes)
     assert(command.is_tool() and command.is_application() and not command.is_bundled())
     command.close()
     assert(rejected("#prisma 4.0\ndef package \"x\" {\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str language = \"luce\"\n}\n"))
@@ -113,17 +110,15 @@ pub func main(arguments: str[]) -> i32!:
     # a license is an SPDX expression
     for spdx in ["MIT", "MIT OR Apache-2.0", "(MIT OR Apache-2.0) AND BSD-3-Clause", "GPL-2.0+ WITH Classpath-exception-2.0", "LicenseRef-acme"]:
         var buffer_line: u8[128]
-        var licensed = try package.decode((try library(try strings.format(buffer_line, f"    str license = \"{spdx}\"\n"), buffer)).bytes)
+        var licensed = try decode((try library(try strings.format(buffer_line, f"    str license = \"{spdx}\"\n"), buffer)).bytes)
         assert(licensed.license == spdx)
         licensed.close()
     for bad in ["MIT OR", "OR MIT", "MIT Apache-2.0", "(MIT", "MIT)", "MIT/X11", "+MIT"]:
         var buffer_line: u8[128]
         assert(rejected(try library(try strings.format(buffer_line, f"    str license = \"{bad}\"\n"), buffer)))
     # a property set twice in one element is refused where it is set again
-    let twice = package.decode((try library("    str[] public = [\"a\"]\n    str[] public = [\"a\"]\n", buffer)).bytes) catch failure:
+    let twice = decode((try library("    str[] public = [\"a\"]\n    str[] public = [\"a\"]\n", buffer)).bytes) catch failure:
         assert(failure.code == invalid)
         assert(failure.message == "package.prisma:8:5: a property is set twice in one element")
-        recover package.Definition()
+        recover Definition()
     assert(twice.name == "")
-    print("PASS package.prisma definition cases")
-    return 0

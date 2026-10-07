@@ -18,6 +18,7 @@ Consumers: [luce-luc](https://github.com/dymokomi/luce-luc) and
 ## Test
 
 ```sh
-python3 tools/bootstrap.py
-python3 tests/run.py          # every compiler mode; --mode native0 for one
+luc test
 ```
+
+The tests are test fragments of the modules they check, under `tests/<module>/`.
