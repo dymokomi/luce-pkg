@@ -14,6 +14,12 @@ pub let max_development: usize = 16
 ## Development paths every package has: `luc install` leaves these out unless `--dev`.
 pub let default_development: str[2] = ["tests", "dev"]
 
+## The protected resources an application may say why it uses, by their manifest names
+## (`str microphone = "..."` in its application element). The system asks the user before a
+## program reaches one; on macOS it shows the program's sentence, from the bundle's
+## Info.plist, and refuses a program that has none.
+pub let usage_names: str[6] = ["microphone", "camera", "photos", "location", "contacts", "bluetooth"]
+
 ## `name` is the dependency's package name and the compiler's dependency key.
 pub struct Requirement:
     pub var name: str
@@ -31,6 +37,9 @@ pub struct Application:
     pub var identifier: str
     ## Empty, or a relative path to the icon (.icns on macOS, .png on Linux).
     pub var icon: str
+    ## Why the program uses each resource of `usage_names`, by index: a sentence the system
+    ## shows the user when the program first reaches it; empty for one it does not use.
+    pub var usages: str[6]
 
 ## Native inputs the compiler builds and links with the package, as in its `[native]`.
 pub struct Native:
@@ -137,6 +146,19 @@ func display_valid(value: str) -> bool:
     for byte in value.bytes:
         let alnum = (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9')
         if not alnum and byte != ' ' and byte != '-' and byte != '_' and byte != '.': return false
+    return true
+
+## The index of the resource `name` in `usage_names`, or none.
+func usage_index(name: str) -> usize?:
+    for i in 0..<usage_names.length:
+        if usage_names[i] == name: return i
+    return none
+
+## A sentence for the user: 1 to 256 bytes, no control byte (so one line), not blank.
+func usage_valid(value: str) -> bool:
+    if value.length == 0 or value.length > 256 or value.bytes[0] == ' ': return false
+    for byte in value.bytes:
+        if byte < 0x20 or byte == 0x7f: return false
     return true
 
 ## Reverse-DNS: at least two dot-separated labels of letters, digits and hyphens.
@@ -412,7 +434,11 @@ pub func decode(text: const u8[]) -> Definition!:
                 if key == "name": result.application.name = try arena.text(doc, path, key)
                 elif key == "identifier": result.application.identifier = try arena.text(doc, path, key)
                 elif key == "icon": result.application.icon = try arena.text(doc, path, key)
-                else: error(invalid, "unknown application property")
+                else:
+                    let resource = usage_index(key) else error(invalid, "unknown application property; the resources an application may say why it uses are microphone, camera, photos, location, contacts and bluetooth")
+                    let usage = try arena.text(doc, path, key)
+                    if not usage_valid(usage): error(invalid, "an application's usage sentence is 1 to 256 bytes of text on one line")
+                    result.application.usages[resource] = usage
             if not display_valid(result.application.name): error(invalid, "application name is missing or not a plain display name")
             if not identifier_valid(result.application.identifier): error(invalid, "application identifier must be reverse-DNS, such as com.example.app")
             if result.application.icon.length > 0 and not path_valid(result.application.icon): error(invalid, "invalid application icon path")

@@ -10,6 +10,8 @@ pub type Requirement = package.Requirement
 pub type Task = package.Task
 pub type Application = package.Application
 pub type Native = package.Native
+## The protected resources an application may say why it uses, `Application.usages` by index.
+pub let usage_names = package.usage_names
 
 ## Decode an authored package.prisma; see docs/PACKAGE_PRISMA.md.
 pub func decode_package(text: const u8[]) -> Definition!:

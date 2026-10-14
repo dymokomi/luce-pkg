@@ -18,6 +18,10 @@ func out_of_bounds(value: Definition*) -> bool:
 func library(body: str, buffer: u8[]) -> str!:
     return try strings.format(buffer, f"#prisma 4.0\ndef package \"demo\" {{\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"package\"\n    str language = \"luce-base\"\n{body}}}\n")
 
+## An application's manifest whose application element holds `body`.
+func application(body: str, buffer: u8[]) -> str!:
+    return try strings.format(buffer, f"#prisma 4.0\ndef package \"demo\" {{\n    str owner = \"acme\"\n    str version = \"1.0.0\"\n    str kind = \"application\"\n    str language = \"luce-base\"\n    str entry = \"src/main.lucb\"\n    def application \"bundle\" {{\n        str name = \"Demo\"\n        str identifier = \"com.example.demo\"\n{body}    }}\n}}\n")
+
 test "package.prisma definition cases":
     var value = try decode(sample.bytes)
     assert(value.name == "luced" and value.owner == "dymokomi" and value.version == "0.3.0")
@@ -86,6 +90,13 @@ test "package.prisma definition cases":
     assert(rejected(try library("    str entry = \"src/main.lucb\"\n    def application \"bundle\" {\n        str name = \"Demo\"\n        str identifier = \"notreversedns\"\n    }\n", buffer)))
     assert(rejected(try library("    str entry = \"src/main.lucb\"\n    def application \"bundle\" {\n        str name = \"../Escape\"\n        str identifier = \"com.example.demo\"\n    }\n", buffer)))
     assert(rejected(try library("    def native \"inputs\" {\n        str[] sources = [\"../outside.c\"]\n    }\n", buffer)))
+    # an application says why it uses a protected resource, by the resource's name
+    var asking = try decode((try application("        str microphone = \"Demo records from your audio input.\"\n        str bluetooth = \"Demo talks to <your> MIDI & audio devices.\"\n", buffer)).bytes)
+    assert(usage_names[0] == "microphone" and asking.application.usages[0] == "Demo records from your audio input.")
+    assert(usage_names[5] == "bluetooth" and asking.application.usages[5] == "Demo talks to <your> MIDI & audio devices." and asking.application.usages[1] == "")
+    asking.close()
+    assert(rejected(try application("        str scanner = \"Demo scans.\"\n", buffer)))
+    assert(rejected(try application("        str camera = \"\"\n", buffer)))
     assert(rejected(try library("    def native \"inputs\" {\n        str[] libraries = [\"-Wl,-rpath,/tmp\"]\n    }\n", buffer)))
     assert(rejected(try library("    def widget \"x\" {\n    }\n", buffer)))
     assert(rejected(try library("    def dependency \"a\" {\n        str owner = \"Not Valid\"\n        str version = \"1.0.0\"\n    }\n", buffer)))

@@ -76,6 +76,17 @@ Children of the root:
   bundle opens as an application instead of in a terminal. `luc install` installs
   the bundle, links the command into `~/.luce/bin`, and on macOS links the bundle
   into `~/Applications`.
+  A program that uses a protected resource says why, in a sentence the system shows
+  the user when it first asks: `microphone`, `camera`, `photos`, `location`,
+  `contacts` or `bluetooth`, each a `str` of 1 to 256 bytes on one line, such as
+  `str microphone = "Luced Music records from your audio input."`. On macOS they
+  become the bundle's usage descriptions (`NSMicrophoneUsageDescription`,
+  `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`,
+  `NSLocationUsageDescription` with `NSLocationWhenInUseUsageDescription`,
+  `NSContactsUsageDescription`, `NSBluetoothAlwaysUsageDescription`), without which
+  macOS refuses the program the resource. Windows and Linux ask the user without a
+  sentence from the program (Windows' privacy settings, Linux's portals), so there
+  they change nothing.
 - `def native "<any-name>"`, at most one: C inputs built and linked with the package,
   as `str[]` properties `sources` and `link_search` (relative paths), and `libraries`,
   `frameworks` and `pkg_config` (plain names, never options).
